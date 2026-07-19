@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Replit Downloader</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0e1117;
+    --surface: #161b27;
+    --surface2: #1e2535;
+    --border: #2a3348;
+    --accent: #f26207;
+    --accent2: #ff7a30;
+    --text: #e8eaf0;
+    --text2: #8892a4;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --radius: 12px;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 64px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 20px;
+    color: var(--accent);
+  }
+  .logo svg { width: 32px; height: 32px; }
+  .header-status {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--text2);
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge.success { background: rgba(34,197,94,0.15); color: var(--success); }
+  .badge.warning { background: rgba(245,158,11,0.15); color: var(--warning); }
+  .badge.danger  { background: rgba(239,68,68,0.15); color: var(--danger); }
+  .badge.neutral { background: rgba(136,146,164,0.15); color: var(--text2); }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text2);
+    margin-bottom: 16px;
+  }
+
+  /* Steps */
+  .steps { display: flex; gap: 16px; margin-bottom: 24px; }
+  .step {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    position: relative;
+  }
+  .step.active { border-color: var(--accent); background: rgba(242,98,7,0.08); }
+  .step-num {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--border);
+    color: var(--text2);
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+  }
+  .step.active .step-num { background: var(--accent); color: white; }
+  .step.done .step-num { background: var(--success); color: white; }
+  .step-label { font-size: 13px; font-weight: 600; color: var(--text); }
+  .step-sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+  /* Textarea & inputs */
+  textarea, input[type="text"] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    resize: vertical;
+    transition: border-color .2s;
+    outline: none;
+  }
+  textarea:focus, input[type="text"]:focus { border-color: var(--accent); }
+  textarea { min-height: 120px; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: opacity .15s, transform .1s;
+    text-decoration: none;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover:not(:disabled) { background: var(--accent2); }
+  .btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .btn-success { background: var(--success); color: white; }
+  .btn-danger { background: var(--danger); color: white; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+  /* Alerts */
+  .alert {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+  .alert.show { display: block; }
+  .alert-success { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); color: var(--success); }
+  .alert-error   { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); color: #f87171; }
+  .alert-info    { background: rgba(99,179,237,0.12); border: 1px solid rgba(99,179,237,0.3); color: #90cdf4; }
+
+  /* Progress */
+  .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin: 12px 0; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .4s; }
+
+  /* Stats row */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+  .stat {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    text-align: center;
+  }
+  .stat-num { font-size: 32px; font-weight: 800; color: var(--accent); }
+  .stat-label { font-size: 12px; color: var(--text2); margin-top: 4px; }
+
+  /* Repls table */
+  .search-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+  .search-bar input { flex: 1; min-height: 38px; font-family: inherit; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text2);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 12px 12px;
+    font-size: 13px;
+    border-bottom: 1px solid rgba(42,51,72,0.5);
+    vertical-align: middle;
+  }
+  tr:hover td { background: rgba(30,37,53,0.6); }
+  .repl-name { font-weight: 600; color: var(--text); }
+  .repl-lang {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    background: var(--border);
+    color: var(--text2);
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+  }
+  .dot-green { background: var(--success); }
+  .dot-gray  { background: var(--text2); }
+
+  /* Section toggle */
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* Tab bar */
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+  .tab {
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text2);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color .2s, border-color .2s;
+    margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Spinner */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--text2);
+  }
+  .empty-state svg { width: 48px; height: 48px; margin-bottom: 12px; opacity: .4; }
+  .empty-state p { font-size: 14px; }
+
+  /* Tooltip */
+  .tip { font-size: 12px; color: var(--text2); margin-top: 8px; line-height: 1.5; }
+
+  @media (max-width: 640px) {
+    .steps { flex-direction: column; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    main { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+    </svg>
+    Replit Downloader
+  </div>
+  <div class="header-status">
+    <span id="auth-badge" class="badge neutral">
+      <span id="auth-dot">●</span> <span id="auth-text">Not connected</span>
+    </span>
+    <button class="btn btn-ghost btn-sm" onclick="logout()" id="logout-btn" style="display:none">Sign out</button>
+  </div>
+</header>
+
+<main>
+  <!-- Step indicators -->
+  <div class="steps">
+    <div class="step active" id="step1" onclick="goTab('setup')">
+      <div class="step-num">1</div>
+      <div class="step-label">Add Cookies</div>
+      <div class="step-sub">Paste your Replit session</div>
+    </div>
+    <div class="step" id="step2" onclick="goTab('repls')">
+      <div class="step-num">2</div>
+      <div class="step-label">Fetch Repls</div>
+      <div class="step-sub">Load your repl list</div>
+    </div>
+    <div class="step" id="step3" onclick="goTab('downloads')">
+      <div class="step-num">3</div>
+      <div class="step-label">Download</div>
+      <div class="step-sub">Get your ZIP files</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="goTab('setup')" id="tab-setup">🔑 Setup</div>
+    <div class="tab" onclick="goTab('repls')" id="tab-repls">📦 My Repls</div>
+    <div class="tab" onclick="goTab('downloads')" id="tab-downloads">⬇️ Downloads</div>
+  </div>
+
+  <!-- ── SETUP TAB ── -->
+  <div class="section active" id="sec-setup">
+    <div class="card">
+      <div class="card-title">Step 1 — Paste your Replit cookies</div>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.6">
+        1. Go to <strong style="color:var(--text)">replit.com</strong> and log in<br>
+        2. Install the <strong style="color:var(--text)">Cookie-Editor</strong> browser extension<br>
+        3. Click the extension → <em>Export → Export as JSON</em><br>
+        4. Paste the full JSON array below
+      </p>
+      <textarea id="cookie-input" placeholder='[{"name":"connect.sid","value":"..."},...]' rows="7"></textarea>
+      <p class="tip">⚠️ Your cookies are stored only on this server and never sent anywhere except replit.com</p>
+      <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="saveCookies()">
+          <span id="save-spinner" style="display:none" class="spinner"></span>
+          Save Cookies
+        </button>
+        <button class="btn btn-ghost" onclick="checkAuth()">
+          <span id="auth-spinner" style="display:none" class="spinner"></span>
+          Check Connection
+        </button>
+      </div>
+      <div class="alert" id="setup-alert"></div>
+    </div>
+  </div>
+
+  <!-- ── REPLS TAB ── -->
+  <div class="section" id="sec-repls">
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-num" id="stat-total">—</div>
+        <div class="stat-label">Total Repls</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" id="stat-downloaded" style="color:var(--success)">—</div>
+        <div class="stat-label">Downloaded</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" id="stat-pending" style="color:var(--warning)">—</div>
+        <div class="stat-label">Pending</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        <button class="btn btn-primary" onclick="fetchRepls()">
+          <span id="fetch-spinner" style="display:none" class="spinner"></span>
+          🔄 Fetch Repl List
+        </button>
+        <button class="btn btn-success" onclick="downloadAll()">
+          <span id="dl-all-spinner" style="display:none" class="spinner"></span>
+          ⬇️ Download All ZIPs
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="clearRepls()" style="margin-left:auto">Clear list</button>
+      </div>
+
+      <div class="progress-bar" id="dl-progress-bar" style="display:none">
+        <div class="progress-fill" id="dl-progress-fill" style="width:0%"></div>
+      </div>
+      <p id="dl-progress-text" style="font-size:12px;color:var(--text2);margin-bottom:12px;display:none"></p>
+
+      <div class="alert" id="repls-alert"></div>
+
+      <div class="search-bar">
+        <input type="text" id="search-input" placeholder="Search repls…" oninput="filterRepls()">
+      </div>
+
+      <div id="repls-table-wrap">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          <p>No repls yet. Click <strong>Fetch Repl List</strong> to load your repls.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── DOWNLOADS TAB ── -->
+  <div class="section" id="sec-downloads">
+    <div class="card">
+      <div class="card-title">Downloaded ZIPs</div>
+      <div id="downloads-list">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          <p>No downloads yet. Go to <strong>My Repls</strong> and download some!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+let allRepls = [];
+let pollTimer = null;
+
+// ── Tab switching ────────────────────────────────────────────────
+function goTab(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('sec-' + name).classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'repls') loadRepls();
+  if (name === 'downloads') loadDownloads();
+}
+
+// ── Auth ─────────────────────────────────────────────────────────
+async function checkAuth() {
+  const sp = document.getElementById('auth-spinner');
+  sp.style.display = 'inline-block';
+  try {
+    const r = await fetch('/api/auth-status');
+    const d = await r.json();
+    updateAuthBadge(d);
+    if (!d.authenticated) {
+      showAlert('setup-alert', 'error', 'Not connected: ' + d.reason);
+    } else {
+      showAlert('setup-alert', 'success', `Connected as @${d.username}`);
+    }
+  } catch(e) {
+    showAlert('setup-alert', 'error', e.message);
+  } finally {
+    sp.style.display = 'none';
+  }
+}
+
+function updateAuthBadge(d) {
+  const badge = document.getElementById('auth-badge');
+  const text  = document.getElementById('auth-text');
+  const logoutBtn = document.getElementById('logout-btn');
+  if (d.authenticated) {
+    badge.className = 'badge success';
+    text.textContent = '@' + d.username;
+    logoutBtn.style.display = '';
+    document.getElementById('step1').classList.add('done');
+  } else {
+    badge.className = 'badge neutral';
+    text.textContent = 'Not connected';
+    logoutBtn.style.display = 'none';
+  }
+}
+
+async function saveCookies() {
+  const raw = document.getElementById('cookie-input').value.trim();
+  if (!raw) return showAlert('setup-alert', 'error', 'Please paste your cookies JSON.');
+  let cookies;
+  try { cookies = JSON.parse(raw); } catch(e) { return showAlert('setup-alert', 'error', 'Invalid JSON: ' + e.message); }
+
+  const sp = document.getElementById('save-spinner');
+  sp.style.display = 'inline-block';
+  try {
+    const r = await fetch('/api/cookies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cookies })
+    });
+    const d = await r.json();
+    if (d.success) {
+      showAlert('setup-alert', 'success', d.message + ' Checking connection…');
+      await checkAuth();
+    } else {
+      showAlert('setup-alert', 'error', d.error);
+    }
+  } catch(e) {
+    showAlert('setup-alert', 'error', e.message);
+  } finally {
+    sp.style.display = 'none';
+  }
+}
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' });
+  updateAuthBadge({ authenticated: false });
+}
+
+// ── Repls ─────────────────────────────────────────────────────────
+async function fetchRepls() {
+  const sp = document.getElementById('fetch-spinner');
+  sp.style.display = 'inline-block';
+  showAlert('repls-alert', 'info', 'Fetching your repls from Replit…');
+  try {
+    const r = await fetch('/api/fetch-repls', { method: 'POST' });
+    const d = await r.json();
+    if (d.success) {
+      showAlert('repls-alert', 'success', `Found ${d.count} repls!`);
+      await loadRepls();
+      document.getElementById('step2').classList.add('done');
+    } else {
+      showAlert('repls-alert', 'error', d.error || 'Failed to fetch repls');
+    }
+  } catch(e) {
+    showAlert('repls-alert', 'error', e.message);
+  } finally {
+    sp.style.display = 'none';
+  }
+}
+
+async function loadRepls() {
+  try {
+    const r = await fetch('/api/download-progress');
+    const d = await r.json();
+    allRepls = d.repls || [];
+    document.getElementById('stat-total').textContent = d.total;
+    document.getElementById('stat-downloaded').textContent = d.downloaded;
+    document.getElementById('stat-pending').textContent = d.pending;
+    renderReplsTable(allRepls);
+  } catch(e) {}
+}
+
+function filterRepls() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const filtered = q ? allRepls.filter(r =>
+    (r.title||'').toLowerCase().includes(q) ||
+    (r.slug||'').toLowerCase().includes(q) ||
+    (r.language||'').toLowerCase().includes(q)
+  ) : allRepls;
+  renderReplsTable(filtered);
+}
+
+function renderReplsTable(repls) {
+  const wrap = document.getElementById('repls-table-wrap');
+  if (!repls.length) {
+    wrap.innerHTML = `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+      <p>No repls found. Click <strong>Fetch Repl List</strong> to load your repls.</p>
+    </div>`;
+    return;
+  }
+  let rows = repls.map(r => `
+    <tr>
+      <td>
+        <div class="repl-name">${esc(r.title || r.slug)}</div>
+        <div style="font-size:11px;color:var(--text2)">@${esc(r.owner || '')}/${esc(r.slug || '')}</div>
+      </td>
+      <td><span class="repl-lang">${esc(r.language || '—')}</span></td>
+      <td>${r.is_private ? '🔒 Private' : '🌐 Public'}</td>
+      <td>
+        ${r.downloaded
+          ? `<span class="badge success">✓ Done</span>`
+          : `<span class="badge neutral">Pending</span>`}
+      </td>
+      <td>
+        ${r.downloaded && r.download_path
+          ? `<a class="btn btn-ghost btn-sm" href="/downloads/${esc(r.download_path)}" download>⬇ ZIP</a>`
+          : `<button class="btn btn-ghost btn-sm" onclick="downloadOne('${esc(r.id)}')">⬇ Download</button>`}
+        <a class="btn btn-ghost btn-sm" href="${esc(r.url || '#')}" target="_blank" style="margin-left:4px">↗ Open</a>
+      </td>
+    </tr>
+  `).join('');
+
+  wrap.innerHTML = `<table>
+    <thead><tr>
+      <th>Name</th><th>Language</th><th>Visibility</th><th>Status</th><th>Actions</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+async function downloadOne(replId) {
+  showAlert('repls-alert', 'info', 'Downloading…');
+  try {
+    const r = await fetch(`/api/download/${encodeURIComponent(replId)}`, { method: 'POST' });
+    const d = await r.json();
+    if (d.success) {
+      showAlert('repls-alert', 'success', `Downloaded! ${d.filename} (${formatBytes(d.size)})`);
+      await loadRepls();
+    } else {
+      showAlert('repls-alert', 'error', d.error);
+    }
+  } catch(e) {
+    showAlert('repls-alert', 'error', e.message);
+  }
+}
+
+async function downloadAll() {
+  const sp = document.getElementById('dl-all-spinner');
+  sp.style.display = 'inline-block';
+  showAlert('repls-alert', 'info', 'Starting bulk download in the background…');
+
+  const bar  = document.getElementById('dl-progress-bar');
+  const fill = document.getElementById('dl-progress-fill');
+  const txt  = document.getElementById('dl-progress-text');
+  bar.style.display = 'block';
+  txt.style.display = 'block';
+
+  try {
+    const r = await fetch('/api/download-all', { method: 'POST' });
+    const d = await r.json();
+    if (d.success) {
+      showAlert('repls-alert', 'success', d.message);
+      startPolling(fill, txt, sp);
+    } else {
+      showAlert('repls-alert', 'error', d.error);
+      sp.style.display = 'none';
+    }
+  } catch(e) {
+    showAlert('repls-alert', 'error', e.message);
+    sp.style.display = 'none';
+  }
+}
+
+function startPolling(fill, txt, sp) {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/download-progress');
+      const d = await r.json();
+      allRepls = d.repls || [];
+      document.getElementById('stat-total').textContent = d.total;
+      document.getElementById('stat-downloaded').textContent = d.downloaded;
+      document.getElementById('stat-pending').textContent = d.pending;
+      renderReplsTable(allRepls);
+
+      const pct = d.total ? Math.round(d.downloaded / d.total * 100) : 0;
+      fill.style.width = pct + '%';
+      txt.textContent = `${d.downloaded} / ${d.total} downloaded (${pct}%)`;
+
+      if (d.pending === 0) {
+        clearInterval(pollTimer);
+        sp.style.display = 'none';
+        document.getElementById('step3').classList.add('done');
+        showAlert('repls-alert', 'success', `All ${d.downloaded} repls downloaded!`);
+        loadDownloads();
+      }
+    } catch {}
+  }, 1500);
+}
+
+// ── Downloads ─────────────────────────────────────────────────────
+async function loadDownloads() {
+  try {
+    const r = await fetch('/api/download-progress');
+    const d = await r.json();
+    const downloaded = (d.repls || []).filter(r => r.downloaded && r.download_path);
+
+    const wrap = document.getElementById('downloads-list');
+    if (!downloaded.length) {
+      wrap.innerHTML = `<div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        <p>No downloads yet.</p>
+      </div>`;
+      return;
+    }
+    wrap.innerHTML = `
+      <div style="margin-bottom:16px;font-size:13px;color:var(--text2)">${downloaded.length} ZIP file${downloaded.length !== 1 ? 's' : ''} ready</div>
+      <table>
+        <thead><tr><th>Repl</th><th>Owner</th><th>File</th><th>Action</th></tr></thead>
+        <tbody>
+          ${downloaded.map(r => `<tr>
+            <td><div class="repl-name">${esc(r.title||r.slug)}</div></td>
+            <td style="color:var(--text2)">@${esc(r.owner||'')}</td>
+            <td style="font-family:monospace;font-size:12px">${esc(r.download_path||'')}</td>
+            <td><a class="btn btn-primary btn-sm" href="/downloads/${esc(r.download_path)}" download>⬇ Download ZIP</a></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e) {}
+}
+
+async function clearRepls() {
+  if (!confirm('Clear all repls from the list? (Downloaded files are kept)')) return;
+  await fetch('/api/clear-repls', { method: 'POST' });
+  allRepls = [];
+  renderReplsTable([]);
+  document.getElementById('stat-total').textContent = 0;
+  document.getElementById('stat-downloaded').textContent = 0;
+  document.getElementById('stat-pending').textContent = 0;
+}
+
+// ── Utilities ─────────────────────────────────────────────────────
+function showAlert(id, type, msg) {
+  const el = document.getElementById(id);
+  el.className = `alert alert-${type} show`;
+  el.textContent = msg;
+}
+function esc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function formatBytes(n) {
+  if (!n) return '0 B';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+  return (n/1048576).toFixed(1) + ' MB';
+}
+
+// Init
+checkAuth();
+</script>
+</body>
+</html>
