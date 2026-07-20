@@ -646,7 +646,7 @@ async function refreshProgress() {
   const d = await fetch('/api/progress').then(r => r.json()).catch(() => null);
   if (!d) return;
 
-  document.getElementById('dl-panel').style.display = 'block';
+  if (d.status !== 'idle' || d.total > 0) document.getElementById('dl-panel').style.display = 'block';
   document.getElementById('s-total').textContent = d.total || 0;
   document.getElementById('s-done').textContent  = d.done  || 0;
   document.getElementById('s-fail').textContent  = d.failed || 0;
