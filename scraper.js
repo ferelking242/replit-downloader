@@ -1,5 +1,3 @@
-// Playwright scraper — navigates replit.com/repls with real cookies,
-// scrolls to load all repls, then downloads each via Playwright request API.
 const { chromium } = require('playwright-core');
 const path = require('path');
 const fs = require('fs');
@@ -8,18 +6,25 @@ const CHROMIUM_PATH = '/nix/store/43y6k6fj85l4kcd1yan43hpdld6nmjmp-ungoogled-chr
 const DOWNLOADS_DIR = path.join(__dirname, 'downloads');
 const SCREENSHOTS_DIR = path.join(__dirname, 'screenshots');
 
-// Progress state shared with server
+// ── Download state ─────────────────────────────────────────────────
 const state = {
   running: false,
   status: 'idle',
-  total: 0,
-  done: 0,
-  failed: 0,
+  total: 0, done: 0, failed: 0,
   current: '',
-  repls: [],   // { title, slug, owner, status, file, size, error }
+  repls: [],
   log: [],
   debugMode: false,
-  screenshots: [],  // { name, file, ts }
+  screenshots: [],
+  error: null,
+};
+
+// ── Login state ────────────────────────────────────────────────────
+const loginState = {
+  running: false,
+  status: 'idle',  // idle | navigating | waiting_captcha | success | error
+  step: '',
+  screenshots: [],  // live browser screenshots
   error: null,
 };
 
@@ -29,34 +34,146 @@ function log(msg) {
   if (state.log.length > 300) state.log.shift();
 }
 
-async function screenshot(page, name) {
-  if (!state.debugMode) return;
+function ensureDir(dir) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+async function takeShot(page, name, stateObj) {
   try {
-    if (!fs.existsSync(SCREENSHOTS_DIR)) fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+    ensureDir(SCREENSHOTS_DIR);
     const ts = Date.now();
-    const filename = `${ts}-${name.replace(/[^a-z0-9]/gi, '_')}.png`;
-    const filepath = path.join(SCREENSHOTS_DIR, filename);
-    await page.screenshot({ path: filepath, fullPage: false });
-    state.screenshots.push({ name, file: filename, ts });
-    if (state.screenshots.length > 50) state.screenshots.shift();
-    log(`📸 Screenshot: ${name}`);
+    const filename = `${ts}-${name.replace(/[^a-z0-9]/gi,'_')}.png`;
+    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, filename), fullPage: false });
+    stateObj.screenshots.push({ name, file: filename, ts });
+    if (stateObj.screenshots.length > 60) stateObj.screenshots.shift();
+    return filename;
+  } catch { return null; }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// LOGIN via Playwright
+// ─────────────────────────────────────────────────────────────────
+async function loginWithPassword(email, password) {
+  if (loginState.running) return;
+  loginState.running = true;
+  loginState.status = 'navigating';
+  loginState.step = 'Lancement de Chromium…';
+  loginState.screenshots = [];
+  loginState.error = null;
+
+  let browser;
+  try {
+    browser = await chromium.launch({
+      executablePath: CHROMIUM_PATH,
+      headless: true,
+      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'],
+    });
+
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      viewport: { width: 1280, height: 900 },
+    });
+
+    const page = await context.newPage();
+
+    loginState.step = 'Navigation vers replit.com/login…';
+    await page.goto('https://replit.com/login', { waitUntil: 'networkidle', timeout: 30000 });
+    await takeShot(page, 'login-page', loginState);
+
+    // Fill email
+    loginState.step = 'Saisie de l\'email…';
+    const emailSel = 'input[name="username"], input[type="email"], input[placeholder*="email" i], input[placeholder*="username" i]';
+    await page.waitForSelector(emailSel, { timeout: 10000 });
+    await page.fill(emailSel, email);
+    await page.waitForTimeout(400);
+
+    // Fill password
+    loginState.step = 'Saisie du mot de passe…';
+    const passSel = 'input[type="password"]';
+    await page.waitForSelector(passSel, { timeout: 5000 });
+    await page.fill(passSel, password);
+    await takeShot(page, 'filled-form', loginState);
+    await page.waitForTimeout(300);
+
+    // Submit
+    loginState.step = 'Soumission du formulaire…';
+    const submitSel = 'button[type="submit"], button:has-text("Log in"), button:has-text("Sign in"), button:has-text("Continue")';
+    await page.click(submitSel);
+
+    // Wait for navigation or captcha
+    loginState.step = 'Attente de la réponse…';
+    await takeShot(page, 'after-submit', loginState);
+
+    // Poll for up to 30s: success = redirect away from /login, or captcha
+    let success = false;
+    for (let i = 0; i < 30; i++) {
+      await page.waitForTimeout(1000);
+      const url = page.url();
+      await takeShot(page, `poll-${i+1}`, loginState);
+
+      if (!url.includes('/login') && !url.includes('/signin')) {
+        success = true;
+        break;
+      }
+
+      // Check for captcha
+      const hasCaptcha = await page.evaluate(() =>
+        !!(document.querySelector('iframe[src*="hcaptcha"]') ||
+           document.querySelector('.h-captcha') ||
+           document.querySelector('[data-hcaptcha-widget-id]') ||
+           document.querySelector('iframe[src*="recaptcha"]'))
+      ).catch(() => false);
+
+      if (hasCaptcha) {
+        loginState.status = 'waiting_captcha';
+        loginState.step = 'Captcha détecté — vérifie les screenshots et utilise la méthode Cookies si bloqué.';
+        // Keep polling in case it auto-resolves
+      }
+
+      // Check for wrong-password error
+      const hasError = await page.evaluate(() => {
+        const t = document.body?.innerText || '';
+        return t.includes('Invalid') || t.includes('incorrect') || t.includes('wrong') || t.includes('Incorrect');
+      }).catch(() => false);
+      if (hasError) throw new Error('Email ou mot de passe incorrect.');
+    }
+
+    if (!success) {
+      throw new Error('Timeout: impossible de se connecter. Captcha non résolu ou identifiants incorrects.');
+    }
+
+    // Extract cookies
+    loginState.step = 'Connexion réussie — extraction des cookies…';
+    loginState.status = 'success';
+    const cookies = await context.cookies();
+    await takeShot(page, 'success', loginState);
+    return { success: true, cookies };
+
   } catch (e) {
-    log(`⚠ Screenshot failed: ${e.message}`);
+    loginState.status = 'error';
+    loginState.error = e.message;
+    return { success: false, error: e.message };
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+    loginState.running = false;
+    if (loginState.status !== 'success' && loginState.status !== 'error') {
+      loginState.status = 'idle';
+    }
   }
 }
 
+// ─────────────────────────────────────────────────────────────────
+// DOWNLOAD repls
+// ─────────────────────────────────────────────────────────────────
 async function run(cookies) {
   if (state.running) return;
   state.running = true;
   state.status = 'starting';
-  state.done = 0;
-  state.failed = 0;
-  state.repls = [];
-  state.log = [];
-  state.screenshots = [];
-  state.error = null;
+  state.done = 0; state.failed = 0;
+  state.repls = []; state.log = [];
+  state.screenshots = []; state.error = null;
 
-  if (!fs.existsSync(DOWNLOADS_DIR)) fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
+  ensureDir(DOWNLOADS_DIR);
 
   let browser;
   try {
@@ -64,12 +181,7 @@ async function run(cookies) {
     browser = await chromium.launch({
       executablePath: CHROMIUM_PATH,
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-      ]
+      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'],
     });
 
     const context = await browser.newContext({
@@ -79,13 +191,11 @@ async function run(cookies) {
       viewport: { width: 1280, height: 900 },
     });
 
-    // Inject all cookies
     log(`Injection de ${cookies.length} cookies…`);
     const playwrightCookies = cookies
       .filter(c => c.name && c.value)
       .map(c => ({
-        name: c.name,
-        value: c.value,
+        name: c.name, value: c.value,
         domain: c.domain || '.replit.com',
         path: c.path || '/',
         secure: c.secure || false,
@@ -98,88 +208,67 @@ async function run(cookies) {
     const page = await context.newPage();
     page.setDefaultTimeout(30000);
 
-    // ── Step 1: Navigate to /repls ─────────────────────────────────────────
+    // Step 1: Navigate
     state.status = 'navigating';
     log('Navigation vers replit.com/repls…');
     await page.goto('https://replit.com/repls', { waitUntil: 'networkidle', timeout: 60000 });
 
     const url = page.url();
-    log('URL courante: ' + url);
-    await screenshot(page, '01-after-navigation');
+    log('URL: ' + url);
+    if (state.debugMode) await takeShot(page, '01-navigation', state);
 
     if (url.includes('/login') || url.includes('/signin')) {
-      await screenshot(page, '01-login-redirect');
-      throw new Error('Redirigé vers login — cookies expirés. Exporte des cookies frais depuis replit.com.');
+      if (state.debugMode) await takeShot(page, 'login-redirect', state);
+      throw new Error('Redirigé vers login — cookies expirés. Reconnecte-toi et exporte de nouveaux cookies.');
     }
 
-    // ── Step 2: Scroll to load ALL repls ──────────────────────────────────
+    // Step 2: Scroll
     state.status = 'loading';
     log('Scroll pour charger tous les repls…');
     await autoScroll(page);
-    await screenshot(page, '02-after-scroll');
+    if (state.debugMode) await takeShot(page, '02-scroll', state);
 
-    // ── Step 3: Collect repl cards ────────────────────────────────────────
+    // Step 3: Collect
     state.status = 'collecting';
     log('Collecte des repls…');
 
     let replData = await page.evaluate(() => {
-      const results = [];
-      const seen = new Set();
-
-      // Strategy 1: anchor tags with /@username/replname pattern
-      const links = Array.from(document.querySelectorAll('a[href*="/@"]'));
-      for (const a of links) {
+      const results = []; const seen = new Set();
+      for (const a of document.querySelectorAll('a[href*="/@"]')) {
         const href = a.getAttribute('href') || '';
         const m = href.match(/\/@([\w-]+)\/([\w-]+)(?:$|[?#/])/);
         if (!m) continue;
-        const key = m[1] + '/' + m[2];
+        const key = m[1]+'/'+m[2];
         if (seen.has(key)) continue;
         seen.add(key);
         const title = a.querySelector('[class*="title"],[class*="name"],[class*="heading"]')?.textContent?.trim()
-          || a.textContent?.trim()
-          || m[2];
-        results.push({ owner: m[1], slug: m[2], title: title.slice(0, 100) });
+          || a.textContent?.trim().slice(0,80) || m[2];
+        results.push({ owner: m[1], slug: m[2], title });
       }
       return results;
     });
 
-    // Fallback: scan page HTML for JSON patterns
     if (replData.length === 0) {
-      log('Aucun repl via liens — tentative via HTML brut…');
-      await screenshot(page, '03-no-repls-found');
+      log('Fallback: scan HTML…');
       const html = await page.content();
-
-      // Pattern 1: slug+title+user object
-      const matches1 = [...html.matchAll(/"slug":"([^"]+)","[^"]*":"[^"]*"[^}]*?"title":"([^"]+)"[^}]*?"username":"([^"]+)"/g)];
-      for (const m of matches1) {
-        replData.push({ slug: m[1], title: m[2], owner: m[3] });
-      }
-
-      // Pattern 2: simpler slug/owner
-      if (replData.length === 0) {
-        const matches2 = [...html.matchAll(/"slug":"([\w-]+)"[^}]{0,200}"username":"([\w-]+)"/g)];
-        const seen2 = new Set();
-        for (const m of matches2) {
-          const key = m[2] + '/' + m[1];
-          if (!seen2.has(key)) { seen2.add(key); replData.push({ slug: m[1], title: m[1], owner: m[2] }); }
-        }
+      const seen2 = new Set();
+      for (const m of html.matchAll(/"slug":"([\w-]+)"[^}]{0,300}"username":"([\w-]+)"/g)) {
+        const key = m[2]+'/'+m[1];
+        if (!seen2.has(key)) { seen2.add(key); replData.push({ slug: m[1], title: m[1], owner: m[2] }); }
       }
     }
 
     log(`Trouvé ${replData.length} repls`);
+    if (state.debugMode) await takeShot(page, '03-collected', state);
+
     state.total = replData.length;
     state.repls = replData.map(r => ({ ...r, status: 'pending', file: null, error: null }));
 
     if (replData.length === 0) {
-      await screenshot(page, '04-zero-repls');
-      throw new Error('Aucun repl trouvé. Vérifie que tu es connecté sur replit.com et que tes cookies sont frais.');
+      throw new Error('Aucun repl trouvé. Cookies expirés ou compte vide.');
     }
 
-    await screenshot(page, '03-repls-collected');
-
-    // ── Step 4: Download each repl via Playwright request API ─────────────
-    // Using context.request.get() instead of page.goto() to avoid ERR_ABORTED
-    // The request API carries all session cookies from the context automatically.
+    // Step 4: Download
     state.status = 'downloading';
     log('Démarrage des téléchargements…');
 
@@ -192,74 +281,91 @@ async function run(cookies) {
         const filename = `${repl.owner}-${repl.slug}.zip`;
         const filepath = path.join(DOWNLOADS_DIR, filename);
         const zipUrl = `https://replit.com/@${repl.owner}/${repl.slug}.zip`;
+        log(`[${i+1}/${state.repls.length}] ${repl.title}`);
 
-        log(`[${i+1}/${state.repls.length}] Téléchargement: ${repl.title} → ${zipUrl}`);
-
-        // ✅ Fixed approach: use Playwright's request API (carries cookies, no navigation abort)
         const response = await context.request.get(zipUrl, {
           timeout: 120000,
-          headers: {
-            'Accept': 'application/zip,application/octet-stream,*/*',
-            'Referer': 'https://replit.com/repls',
-          }
+          headers: { 'Accept': 'application/zip,application/octet-stream,*/*', 'Referer': 'https://replit.com/repls' },
         });
 
-        if (!response.ok()) {
-          throw new Error(`HTTP ${response.status()} — ${response.statusText()}`);
-        }
+        if (!response.ok()) throw new Error(`HTTP ${response.status()}`);
 
-        const contentType = response.headers()['content-type'] || '';
-        if (contentType.includes('text/html')) {
-          // Got HTML back — likely a redirect to login or 404 page
-          const bodyText = (await response.text()).slice(0, 200);
-          throw new Error(`Réponse HTML reçue (auth expirée?). Début: ${bodyText}`);
+        const ct = response.headers()['content-type'] || '';
+        if (ct.includes('text/html')) {
+          const snippet = (await response.text()).slice(0,120);
+          throw new Error(`Réponse HTML (auth expirée?): ${snippet}`);
         }
 
         const body = await response.body();
-        if (body.length < 22) {
-          throw new Error(`Archive trop petite (${body.length} bytes) — repl vide ou erreur auth`);
-        }
+        if (body.length < 22) throw new Error(`Archive trop petite (${body.length}B)`);
 
         fs.writeFileSync(filepath, body);
-        const stat = fs.statSync(filepath);
-
-        repl.status = 'done';
-        repl.file = filename;
-        repl.size = stat.size;
+        const size = fs.statSync(filepath).size;
+        repl.status = 'done'; repl.file = filename; repl.size = size;
         state.done++;
-        log(`✓ ${repl.title} (${fmtBytes(stat.size)})`);
+        log(`✓ ${repl.title} (${fmtBytes(size)})`);
 
-        // Optionally take a debug screenshot every few repls
-        if (state.debugMode && i % 5 === 0) {
-          await screenshot(page, `05-progress-${i+1}`);
-        }
-
-        // Small pause to be polite to Replit's servers
-        await page.waitForTimeout(800);
-
+        await page.waitForTimeout(600);
       } catch (e) {
-        repl.status = 'error';
-        repl.error = e.message;
+        repl.status = 'error'; repl.error = e.message;
         state.failed++;
         log(`✗ ${repl.title}: ${e.message}`);
-        if (state.debugMode) {
-          await screenshot(page, `05-error-${repl.slug}`);
-        }
+        if (state.debugMode) await takeShot(page, `err-${repl.slug}`, state);
       }
     }
 
     state.status = 'done';
-    log(`Terminé! ${state.done} téléchargés, ${state.failed} erreurs.`);
-    await screenshot(page, '06-finished');
+    log(`✅ Terminé — ${state.done} téléchargés, ${state.failed} erreurs.`);
+    if (state.debugMode) await takeShot(page, '04-done', state);
 
   } catch (e) {
-    state.status = 'error';
-    state.error = e.message;
+    state.status = 'error'; state.error = e.message;
     log('ERREUR: ' + e.message);
   } finally {
     if (browser) await browser.close().catch(() => {});
-    state.running = false;
-    state.current = '';
+    state.running = false; state.current = '';
+  }
+}
+
+// ── Retry a single failed repl ─────────────────────────────────────
+async function retryRepl(slug, cookies) {
+  const repl = state.repls.find(r => r.slug === slug);
+  if (!repl || repl.status === 'done') return;
+  repl.status = 'downloading'; repl.error = null;
+
+  let browser;
+  try {
+    browser = await chromium.launch({
+      executablePath: CHROMIUM_PATH, headless: true,
+      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'],
+    });
+    const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' });
+    await context.addCookies(cookies.filter(c=>c.name&&c.value).map(c=>({
+      name:c.name, value:c.value, domain:c.domain||'.replit.com', path:c.path||'/',
+      secure:c.secure||false, httpOnly:c.httpOnly||false, sameSite:normalizeSameSite(c.sameSite),
+      expires:c.expirationDate?Math.floor(c.expirationDate):undefined,
+    })));
+
+    const zipUrl = `https://replit.com/@${repl.owner}/${repl.slug}.zip`;
+    const filename = `${repl.owner}-${repl.slug}.zip`;
+    const filepath = path.join(DOWNLOADS_DIR, filename);
+
+    const response = await context.request.get(zipUrl, { timeout: 120000 });
+    if (!response.ok()) throw new Error(`HTTP ${response.status()}`);
+    const body = await response.body();
+    if (body.length < 22) throw new Error(`Archive trop petite (${body.length}B)`);
+
+    fs.writeFileSync(filepath, body);
+    const size = fs.statSync(filepath).size;
+    repl.status = 'done'; repl.file = filename; repl.size = size;
+    state.done = Math.min(state.done + 1, state.total);
+    state.failed = Math.max(state.failed - 1, 0);
+    log(`✓ Retry réussi: ${repl.title} (${fmtBytes(size)})`);
+  } catch(e) {
+    repl.status = 'error'; repl.error = e.message;
+    log(`✗ Retry échoué: ${repl.title}: ${e.message}`);
+  } finally {
+    if (browser) await browser.close().catch(()=>{});
   }
 }
 
@@ -274,22 +380,13 @@ function normalizeSameSite(v) {
 async function autoScroll(page) {
   await page.evaluate(async () => {
     await new Promise(resolve => {
-      let total = 0;
-      const step = 900;
-      let lastHeight = document.body.scrollHeight;
-      let stuckCount = 0;
-      const timer = setInterval(() => {
-        window.scrollBy(0, step);
-        total += step;
-        const newHeight = document.body.scrollHeight;
-        if (newHeight === lastHeight) {
-          stuckCount++;
-          if (stuckCount >= 5) { clearInterval(timer); resolve(); return; }
-        } else {
-          stuckCount = 0;
-          lastHeight = newHeight;
-        }
-        if (total > 60000) { clearInterval(timer); resolve(); }
+      let total = 0, stuckCount = 0, lastH = document.body.scrollHeight;
+      const t = setInterval(() => {
+        window.scrollBy(0, 900); total += 900;
+        const h = document.body.scrollHeight;
+        if (h === lastH) { if (++stuckCount >= 5) { clearInterval(t); resolve(); } }
+        else { stuckCount = 0; lastH = h; }
+        if (total > 80000) { clearInterval(t); resolve(); }
       }, 350);
     });
   });
@@ -299,8 +396,8 @@ async function autoScroll(page) {
 function fmtBytes(n) {
   if (!n) return '0 B';
   if (n < 1024) return n + ' B';
-  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
-  return (n / 1048576).toFixed(1) + ' MB';
+  if (n < 1048576) return (n/1024).toFixed(1)+' KB';
+  return (n/1048576).toFixed(1)+' MB';
 }
 
-module.exports = { run, state };
+module.exports = { run, retryRepl, loginWithPassword, state, loginState };
