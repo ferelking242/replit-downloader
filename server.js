@@ -101,12 +101,25 @@ app.post('/api/start', (req, res) => {
 
 // Live progress
 app.get('/api/progress', (req, res) => {
-  const { running, status, total, done, failed, current, repls, log, error } = scraper.state;
-  res.json({ running, status, total, done, failed, current, error,
-    log: log.slice(-30),
+  const { running, status, total, done, failed, current, repls, log, error, debugMode, screenshots } = scraper.state;
+  res.json({ running, status, total, done, failed, current, error, debugMode,
+    log: log.slice(-50),
+    screenshots: (screenshots || []).slice(-20),
     repls: repls.map(r => ({ title: r.title, slug: r.slug, owner: r.owner, status: r.status, file: r.file, size: r.size, error: r.error }))
   });
 });
+
+// Toggle debug mode
+app.post('/api/debug', (req, res) => {
+  const { enabled } = req.body;
+  scraper.state.debugMode = !!enabled;
+  res.json({ success: true, debugMode: scraper.state.debugMode });
+});
+
+// Serve screenshots
+const SCREENSHOTS_DIR = path.join(__dirname, 'screenshots');
+if (!fs.existsSync(SCREENSHOTS_DIR)) fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+app.use('/screenshots', express.static(SCREENSHOTS_DIR));
 
 // Download a single file
 app.get('/api/file/:filename', (req, res) => {

@@ -7,90 +7,191 @@
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
-    --bg:#0e1117;--surface:#161b27;--surface2:#1e2535;--border:#2a3348;
-    --accent:#f26207;--accent2:#ff7a30;--text:#e8eaf0;--text2:#8892a4;
-    --success:#22c55e;--warning:#f59e0b;--danger:#ef4444;--radius:12px;
+    --bg:#0a0d14;--surface:#111827;--surface2:#1a2235;--surface3:#212d42;
+    --border:#243047;--border2:#2e3d58;
+    --accent:#f26207;--accent2:#ff8c42;--text:#dde3f0;--text2:#7c8faa;--text3:#4a5a74;
+    --success:#22c55e;--warning:#f59e0b;--danger:#ef4444;--info:#3b82f6;
+    --radius:12px;--radius-sm:8px;
   }
-  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
-  header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 32px;display:flex;align-items:center;gap:16px;height:64px;position:sticky;top:0;z-index:100}
-  .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:20px;color:var(--accent)}
-  .header-right{margin-left:auto;display:flex;align-items:center;gap:12px}
-  .badge{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600}
-  .badge.ok{background:rgba(34,197,94,.15);color:var(--success)}
-  .badge.no{background:rgba(136,146,164,.15);color:var(--text2)}
-  main{max-width:960px;margin:0 auto;padding:32px 24px}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:20px}
-  .card-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text2);margin-bottom:16px}
-  textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-family:'Courier New',monospace;font-size:12px;resize:vertical;min-height:110px;outline:none;transition:border-color .2s}
-  textarea:focus{border-color:var(--accent)}
-  .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 22px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:opacity .15s,transform .1s;text-decoration:none}
-  .btn:active{transform:scale(.97)}
-  .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,-apple-system,sans-serif;min-height:100vh;font-size:14px}
+
+  /* ── Header ── */
+  header{
+    background:rgba(17,24,39,.95);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--border);padding:0 28px;
+    display:flex;align-items:center;gap:14px;height:60px;
+    position:sticky;top:0;z-index:100;
+  }
+  .logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:17px;color:var(--accent);letter-spacing:-.01em}
+  .logo svg{flex-shrink:0}
+  .header-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;letter-spacing:.01em}
+  .badge.ok{background:rgba(34,197,94,.12);color:#4ade80;border:1px solid rgba(34,197,94,.2)}
+  .badge.no{background:rgba(124,143,170,.08);color:var(--text2);border:1px solid var(--border)}
+  .badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .badge.ok .dot{box-shadow:0 0 6px currentColor}
+
+  /* ── Layout ── */
+  main{max-width:900px;margin:0 auto;padding:28px 20px}
+
+  /* ── Tabs ── */
+  .tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:24px}
+  .tab{padding:10px 20px;font-size:13px;font-weight:600;color:var(--text2);cursor:pointer;
+    border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .18s;
+    display:flex;align-items:center;gap:7px;border-radius:6px 6px 0 0}
+  .tab:hover{color:var(--text);background:rgba(255,255,255,.03)}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent);background:rgba(242,98,7,.05)}
+  .sec{display:none}.sec.active{display:block}
+
+  /* ── Cards ── */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;margin-bottom:18px}
+  .card-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+  .card-title::after{content:'';flex:1;height:1px;background:var(--border)}
+
+  /* ── Buttons ── */
+  .btn{display:inline-flex;align-items:center;gap:7px;padding:8px 18px;border-radius:var(--radius-sm);
+    font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s;text-decoration:none;white-space:nowrap}
+  .btn:active{transform:scale(.96)}
+  .btn:disabled{opacity:.4;cursor:not-allowed;transform:none!important}
   .btn-primary{background:var(--accent);color:#fff}
   .btn-primary:hover:not(:disabled){background:var(--accent2)}
-  .btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+  .btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border2)}
   .btn-ghost:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
-  .btn-sm{padding:6px 12px;font-size:12px}
-  .btn-danger{background:var(--danger);color:#fff}
+  .btn-danger{background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.2)}
+  .btn-danger:hover:not(:disabled){background:rgba(239,68,68,.2)}
+  .btn-sm{padding:5px 12px;font-size:12px;border-radius:6px}
+
   @keyframes spin{to{transform:rotate(360deg)}}
-  .spinner{width:15px;height:15px;border:2px solid rgba(255,255,255,.25);border-top-color:currentColor;border-radius:50%;animation:spin .6s linear infinite;display:inline-block;flex-shrink:0}
-  .tip{font-size:12px;color:var(--text2);margin-top:8px;line-height:1.6}
+  .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.2);border-top-color:currentColor;border-radius:50%;animation:spin .6s linear infinite;flex-shrink:0}
 
-  /* Big launch button */
-  .launch-btn{width:100%;padding:18px;font-size:18px;font-weight:800;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:12px;transition:opacity .2s,transform .1s}
-  .launch-btn:hover:not(:disabled){opacity:.9}
+  /* ── Forms ── */
+  textarea,input[type=text]{
+    width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);
+    padding:11px 14px;color:var(--text);font-family:'Courier New',monospace;font-size:12px;
+    outline:none;transition:border-color .2s;
+  }
+  textarea{resize:vertical;min-height:100px}
+  textarea:focus,input[type=text]:focus{border-color:var(--accent)}
+  .tip{font-size:12px;color:var(--text2);margin-top:8px;line-height:1.6;display:flex;align-items:flex-start;gap:6px}
+
+  /* ── Launch button ── */
+  .launch-btn{
+    width:100%;padding:16px;font-size:16px;font-weight:800;border-radius:var(--radius);
+    background:linear-gradient(135deg,var(--accent) 0%,var(--accent2) 100%);
+    color:#fff;border:none;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:11px;
+    transition:opacity .2s,transform .15s;
+    box-shadow:0 4px 24px rgba(242,98,7,.25);
+  }
+  .launch-btn:hover:not(:disabled){opacity:.9;transform:translateY(-1px);box-shadow:0 6px 28px rgba(242,98,7,.35)}
   .launch-btn:active:not(:disabled){transform:scale(.98)}
-  .launch-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+  .launch-btn:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
 
-  /* Status panel */
-  .status-panel{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:20px;margin-top:16px}
-  .status-row{display:flex;gap:16px;margin-bottom:16px}
-  .stat{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center}
-  .stat-num{font-size:28px;font-weight:800;color:var(--accent)}
+  /* ── Stats bar ── */
+  .stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0}
+  .stat{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center}
+  .stat-num{font-size:26px;font-weight:800;line-height:1}
+  .stat-num.accent{color:var(--accent)}
   .stat-num.green{color:var(--success)}
   .stat-num.red{color:var(--danger)}
-  .stat-label{font-size:11px;color:var(--text2);margin-top:3px}
+  .stat-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-top:4px}
 
-  .progress-bar{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin:10px 0}
-  .progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .5s}
+  /* ── Progress ── */
+  .progress-bar{height:5px;background:var(--border);border-radius:3px;overflow:hidden}
+  .progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:3px;transition:width .6s ease}
 
-  /* Log terminal */
-  .log-box{background:#0a0d14;border:1px solid var(--border);border-radius:8px;padding:12px 14px;height:160px;overflow-y:auto;font-family:'Courier New',monospace;font-size:12px;color:#a0aec0;margin-top:12px}
-  .log-box p{margin:2px 0;line-height:1.5}
-  .log-box p.ok{color:var(--success)}
-  .log-box p.err{color:var(--danger)}
+  /* ── Log terminal ── */
+  .log-wrap{margin-top:14px;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border)}
+  .log-header{background:var(--surface2);padding:7px 12px;display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border)}
+  .log-header .dots{display:flex;gap:5px}
+  .log-header .dot{width:9px;height:9px;border-radius:50%}
+  .log-box{background:#070a10;padding:12px 14px;height:180px;overflow-y:auto;
+    font-family:'Courier New',monospace;font-size:11.5px;color:#8899b0;line-height:1.6}
+  .log-box p{margin:0;padding:1px 0}
+  .log-box p.ok{color:#4ade80}
+  .log-box p.err{color:#f87171}
+  .log-box p.info{color:#60a5fa}
+  .log-box p.warn{color:#fbbf24}
 
-  /* Repls table */
-  .search-wrap{display:flex;gap:10px;margin-bottom:12px}
-  .search-wrap input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 14px;color:var(--text);font-size:13px;outline:none}
-  .search-wrap input:focus{border-color:var(--accent)}
+  /* ── Debug toggle ── */
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;
+    background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);
+    padding:12px 16px;margin-bottom:14px}
+  .toggle-info h4{font-size:13px;font-weight:700;margin-bottom:2px}
+  .toggle-info p{font-size:11px;color:var(--text2)}
+  .toggle{position:relative;width:42px;height:24px;flex-shrink:0}
+  .toggle input{opacity:0;width:0;height:0;position:absolute}
+  .toggle-slider{position:absolute;inset:0;border-radius:12px;background:var(--border2);cursor:pointer;transition:.25s}
+  .toggle-slider::before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.25s}
+  .toggle input:checked + .toggle-slider{background:var(--accent)}
+  .toggle input:checked + .toggle-slider::before{transform:translateX(18px)}
+
+  /* ── Screenshots gallery ── */
+  .screenshots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:12px}
+  .screenshot-card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;transition:border-color .2s}
+  .screenshot-card:hover{border-color:var(--accent)}
+  .screenshot-card img{width:100%;height:100px;object-fit:cover;display:block}
+  .screenshot-card .sc-label{padding:6px 8px;font-size:10px;color:var(--text2);font-family:'Courier New',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* ── Lightbox ── */
+  #lightbox{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:999;display:none;align-items:center;justify-content:center;cursor:zoom-out}
+  #lightbox.open{display:flex}
+  #lightbox img{max-width:90vw;max-height:90vh;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+
+  /* ── Status label ── */
+  .status-label{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin-top:10px;margin-bottom:6px}
+  .status-dot{width:7px;height:7px;border-radius:50%;background:var(--text3);flex-shrink:0}
+  .status-dot.running{background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse 1.2s ease infinite}
+  .status-dot.done{background:var(--success)}
+  .status-dot.error{background:var(--danger)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+  /* ── Files table ── */
+  .search-wrap{display:flex;gap:8px;margin-bottom:14px}
+  .search-wrap input{flex:1;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px}
   table{width:100%;border-collapse:collapse}
-  th{text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);padding:8px 10px;border-bottom:1px solid var(--border)}
-  td{padding:10px 10px;font-size:13px;border-bottom:1px solid rgba(42,51,72,.5);vertical-align:middle}
-  tr:hover td{background:rgba(30,37,53,.6)}
-  .pill{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;background:var(--border);color:var(--text2)}
-  .pill.ok{background:rgba(34,197,94,.15);color:var(--success)}
-  .pill.err{background:rgba(239,68,68,.15);color:#f87171}
-  .pill.spin{background:rgba(242,98,7,.15);color:var(--accent)}
+  th{text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+    color:var(--text3);padding:7px 10px;border-bottom:1px solid var(--border)}
+  td{padding:9px 10px;font-size:13px;border-bottom:1px solid rgba(36,48,71,.5);vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:rgba(26,34,53,.6)}
+  .pill{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:600;white-space:nowrap}
+  .pill.ok{background:rgba(34,197,94,.12);color:#4ade80;border:1px solid rgba(34,197,94,.2)}
+  .pill.err{background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.2)}
+  .pill.spin{background:rgba(242,98,7,.12);color:var(--accent);border:1px solid rgba(242,98,7,.2)}
+  .pill.pend{background:var(--surface2);color:var(--text3);border:1px solid var(--border)}
+  .empty{text-align:center;padding:48px;color:var(--text3);font-size:13px;line-height:2}
 
-  .empty{text-align:center;padding:40px;color:var(--text2);font-size:13px}
+  .setup-step{display:flex;gap:12px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border)}
+  .setup-step:last-child{border-bottom:none}
+  .step-num{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+  .step-text{font-size:13px;color:var(--text2);line-height:1.6}
+  .step-text strong{color:var(--text)}
+  code{background:var(--surface2);border:1px solid var(--border);padding:1px 6px;border-radius:4px;font-family:'Courier New',monospace;font-size:11px;color:var(--accent)}
 
-  /* Tabs */
-  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px}
-  .tab{padding:10px 18px;font-size:13px;font-weight:600;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .2s,border-color .2s}
-  .tab:hover{color:var(--text)}
-  .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
-  .sec{display:none}.sec.active{display:block}
+  /* ── Alert ── */
+  .alert{padding:10px 14px;border-radius:var(--radius-sm);font-size:12px;line-height:1.5;margin-top:10px}
+  .alert.ok{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);color:#4ade80}
+  .alert.err{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#f87171}
+
+  /* scrollbar */
+  ::-webkit-scrollbar{width:5px;height:5px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
 </style>
 </head>
 <body>
+
 <header>
   <div class="logo">
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+    </svg>
     Replit Downloader
   </div>
   <div class="header-right">
-    <span id="auth-badge" class="badge no">● Not connected</span>
+    <span id="auth-badge" class="badge no"><span class="dot"></span><span id="auth-label">Not connected</span></span>
     <button class="btn btn-ghost btn-sm" id="logout-btn" onclick="logout()" style="display:none">Sign out</button>
   </div>
 </header>
@@ -100,72 +201,111 @@
     <div class="tab active" onclick="go('setup')" id="t-setup">🔑 Setup</div>
     <div class="tab" onclick="go('run')" id="t-run">🚀 Download</div>
     <div class="tab" onclick="go('files')" id="t-files">📦 Files</div>
+    <div class="tab" onclick="go('debug')" id="t-debug" style="display:none">🐛 Debug</div>
   </div>
 
-  <!-- SETUP -->
+  <!-- ═══ SETUP ═══ -->
   <div class="sec active" id="s-setup">
     <div class="card">
-      <div class="card-title">Colle tes cookies Replit (JSON)</div>
-      <ol style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:2;padding-left:18px">
-        <li>Va sur <strong style="color:var(--text)">replit.com</strong> et connecte-toi</li>
-        <li>Installe l'extension <strong style="color:var(--text)">Cookie-Editor</strong></li>
-        <li>Clique → <em>Export → Export as JSON</em></li>
-        <li>Colle le JSON complet ci-dessous</li>
-      </ol>
-      <textarea id="cookie-input" placeholder='[{"name":"connect.sid","value":"..."},...]'></textarea>
-      <p class="tip">🔒 Tes cookies ne quittent jamais ce serveur — ils ne sont envoyés qu'à replit.com</p>
-      <div style="margin-top:14px;display:flex;gap:10px">
-        <button class="btn btn-primary" onclick="saveCookies()">
+      <div class="card-title">Cookies Replit</div>
+      <div style="margin-bottom:16px">
+        <div class="setup-step"><div class="step-num">1</div><div class="step-text">Va sur <strong>replit.com</strong> et connecte-toi à ton compte</div></div>
+        <div class="setup-step"><div class="step-num">2</div><div class="step-text">Installe l'extension <strong>Cookie-Editor</strong> (Chrome / Firefox)</div></div>
+        <div class="setup-step"><div class="step-num">3</div><div class="step-text">Clique sur l'icône Cookie-Editor → <strong>Export</strong> → <strong>Export as JSON</strong></div></div>
+        <div class="setup-step"><div class="step-num">4</div><div class="step-text">Colle le JSON complet ci-dessous et clique <strong>Save Cookies</strong></div></div>
+      </div>
+      <textarea id="cookie-input" placeholder='[{"name":"connect.sid","value":"..."},{"name":"__Host-session-sig","value":"..."},...]'></textarea>
+      <p class="tip">🔒 Tes cookies restent sur ce serveur uniquement — ils ne sont jamais envoyés à des tiers.</p>
+      <div style="margin-top:14px;display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary" onclick="saveCookies()" id="save-btn">
           <span id="save-sp" class="spinner" style="display:none"></span>
           💾 Save Cookies
         </button>
       </div>
-      <div id="setup-msg" style="margin-top:12px;font-size:13px"></div>
+      <div id="setup-msg"></div>
     </div>
   </div>
 
-  <!-- DOWNLOAD -->
+  <!-- ═══ DOWNLOAD ═══ -->
   <div class="sec" id="s-run">
     <div class="card">
-      <div class="card-title">Télécharger tous tes repls en ZIP</div>
-      <p style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.7">
-        Un vrai navigateur (Chromium) va ouvrir replit.com/repls avec tes cookies,
-        détecter tous tes repls, et télécharger chacun en <strong style="color:var(--text)">.zip</strong> natif de Replit.
-      </p>
+      <div class="card-title">Télécharger tous les repls en ZIP</div>
+
+      <!-- Debug toggle -->
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <h4>🐛 Mode Debug</h4>
+          <p>Capture des screenshots Chromium à chaque étape clé</p>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="debug-toggle" onchange="toggleDebug(this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
       <button class="launch-btn" id="launch-btn" onclick="launch()">
         <span id="launch-sp" class="spinner" style="display:none"></span>
         <span id="launch-txt">🚀 Lancer le téléchargement</span>
       </button>
 
-      <div class="status-panel" id="status-panel" style="display:none">
-        <div class="status-row">
-          <div class="stat"><div class="stat-num" id="s-total">0</div><div class="stat-label">Total repls</div></div>
+      <div id="status-panel" style="display:none;margin-top:18px">
+        <div class="stats-row">
+          <div class="stat"><div class="stat-num accent" id="s-total">0</div><div class="stat-label">Total repls</div></div>
           <div class="stat"><div class="stat-num green" id="s-done">0</div><div class="stat-label">Téléchargés</div></div>
           <div class="stat"><div class="stat-num red" id="s-fail">0</div><div class="stat-label">Erreurs</div></div>
         </div>
         <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
-        <p id="prog-label" style="font-size:12px;color:var(--text2);margin-bottom:8px"></p>
-        <div class="log-box" id="log-box"></div>
+        <div class="status-label">
+          <div class="status-dot" id="status-dot"></div>
+          <span id="prog-label"></span>
+        </div>
+        <div class="log-wrap">
+          <div class="log-header">
+            <div class="dots">
+              <div class="dot" style="background:#ef4444"></div>
+              <div class="dot" style="background:#f59e0b"></div>
+              <div class="dot" style="background:#22c55e"></div>
+            </div>
+            <span>Terminal</span>
+            <button class="btn btn-sm btn-ghost" onclick="clearLog()" style="padding:2px 8px;font-size:10px">Clear</button>
+          </div>
+          <div class="log-box" id="log-box"></div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- FILES -->
+  <!-- ═══ FILES ═══ -->
   <div class="sec" id="s-files">
     <div class="card">
       <div class="card-title">Fichiers ZIP téléchargés</div>
       <div class="search-wrap">
-        <input id="search" type="text" placeholder="Rechercher…" oninput="filterFiles()">
-        <button class="btn btn-ghost btn-sm" onclick="loadFiles()">🔄 Refresh</button>
+        <input id="search" type="text" placeholder="🔍 Rechercher un repl…" oninput="filterFiles()">
+        <button class="btn btn-ghost btn-sm" onclick="loadFiles()">↻ Refresh</button>
       </div>
-      <div id="files-wrap"><div class="empty">Aucun fichier encore.</div></div>
+      <div id="files-wrap"><div class="empty">Aucun fichier<br>Lance le téléchargement d'abord.</div></div>
+    </div>
+  </div>
+
+  <!-- ═══ DEBUG ═══ -->
+  <div class="sec" id="s-debug">
+    <div class="card">
+      <div class="card-title">Screenshots Chromium</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:14px">Chromium prend des photos à chaque étape quand le mode debug est activé.</p>
+      <div id="screenshots-wrap"><div class="empty">Aucun screenshot.<br>Active le mode debug et relance le téléchargement.</div></div>
     </div>
   </div>
 </main>
 
+<!-- Lightbox -->
+<div id="lightbox" onclick="closeLightbox()">
+  <img id="lightbox-img" src="" alt="">
+</div>
+
 <script>
 let pollTimer = null;
 let allReplsCache = [];
+let logCache = [];
 
 // ── Tabs ─────────────────────────────────────────────────────────
 function go(name) {
@@ -175,20 +315,22 @@ function go(name) {
   document.getElementById('t-'+name).classList.add('active');
   if (name === 'files') loadFiles();
   if (name === 'run') refreshProgress();
+  if (name === 'debug') loadScreenshots();
 }
 
 // ── Auth ─────────────────────────────────────────────────────────
 async function checkAuth() {
   const r = await fetch('/api/auth-status').then(r=>r.json()).catch(()=>({}));
   const badge = document.getElementById('auth-badge');
+  const label = document.getElementById('auth-label');
   const logoutBtn = document.getElementById('logout-btn');
   if (r.authenticated) {
     badge.className = 'badge ok';
-    badge.textContent = '● @' + r.username;
+    label.textContent = '@' + r.username;
     logoutBtn.style.display = '';
   } else {
     badge.className = 'badge no';
-    badge.textContent = '● Not connected';
+    label.textContent = 'Not connected';
     logoutBtn.style.display = 'none';
   }
   return r.authenticated;
@@ -204,26 +346,38 @@ async function saveCookies() {
   const raw = document.getElementById('cookie-input').value.trim();
   const msg = document.getElementById('setup-msg');
   const sp = document.getElementById('save-sp');
-  if (!raw) { msg.innerHTML = '<span style="color:var(--danger)">Colle tes cookies d\'abord.</span>'; return; }
+  const btn = document.getElementById('save-btn');
+  if (!raw) { msg.innerHTML = '<div class="alert err">Colle tes cookies d\'abord.</div>'; return; }
 
   let cookies;
-  try { cookies = JSON.parse(raw); } catch(e) { msg.innerHTML = `<span style="color:var(--danger)">JSON invalide: ${e.message}</span>`; return; }
+  try { cookies = JSON.parse(raw); }
+  catch(e) { msg.innerHTML = `<div class="alert err">JSON invalide: ${e.message}</div>`; return; }
 
-  sp.style.display = 'inline-block';
+  sp.style.display = 'inline-block'; btn.disabled = true;
   const r = await fetch('/api/cookies', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ cookies })
   }).then(r=>r.json()).catch(e=>({success:false,error:e.message}));
-  sp.style.display = 'none';
+  sp.style.display = 'none'; btn.disabled = false;
 
   if (r.success) {
-    msg.innerHTML = `<span style="color:var(--success)">✓ ${r.message} Connecté en tant que @${r.username}</span>`;
+    msg.innerHTML = `<div class="alert ok">✓ ${r.message} — Connecté en tant que @${r.username}</div>`;
     checkAuth();
-    setTimeout(() => go('run'), 1200);
+    setTimeout(() => go('run'), 1400);
   } else {
-    msg.innerHTML = `<span style="color:var(--danger)">✗ ${r.error}</span>`;
+    msg.innerHTML = `<div class="alert err">✗ ${r.error}</div>`;
   }
+}
+
+// ── Debug toggle ──────────────────────────────────────────────────
+async function toggleDebug(enabled) {
+  await fetch('/api/debug', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ enabled })
+  });
+  const tab = document.getElementById('t-debug');
+  tab.style.display = enabled ? '' : 'none';
+  if (!enabled && document.getElementById('s-debug').classList.contains('active')) go('run');
 }
 
 // ── Launch ─────────────────────────────────────────────────────────
@@ -231,21 +385,24 @@ async function launch() {
   const auth = await checkAuth();
   if (!auth) {
     alert('Ajoute tes cookies d\'abord (onglet Setup).');
-    go('setup');
-    return;
+    go('setup'); return;
   }
+  logCache = [];
   document.getElementById('launch-sp').style.display = 'inline-block';
   document.getElementById('launch-txt').textContent = 'Démarrage…';
   document.getElementById('launch-btn').disabled = true;
   document.getElementById('status-panel').style.display = 'block';
+  document.getElementById('log-box').innerHTML = '';
 
   await fetch('/api/start', { method: 'POST' });
   startPolling();
 }
 
+function clearLog() { logCache = []; document.getElementById('log-box').innerHTML = ''; }
+
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(refreshProgress, 1500);
+  pollTimer = setInterval(refreshProgress, 1200);
 }
 
 async function refreshProgress() {
@@ -257,51 +414,57 @@ async function refreshProgress() {
   document.getElementById('s-done').textContent = d.done || 0;
   document.getElementById('s-fail').textContent = d.failed || 0;
 
-  const pct = d.total ? Math.round(d.done / d.total * 100) : 0;
+  const pct = d.total ? Math.round((d.done + d.failed) / d.total * 100) : 0;
   document.getElementById('prog-fill').style.width = pct + '%';
 
+  const dot = document.getElementById('status-dot');
+  dot.className = 'status-dot' + (d.running ? ' running' : d.status === 'done' ? ' done' : d.status === 'error' ? ' error' : '');
+
   const statusLabels = {
-    idle: 'En attente',
-    starting: '🚀 Lancement de Chromium…',
-    navigating: '🌐 Navigation vers replit.com/repls…',
-    loading: '📜 Chargement des repls…',
-    collecting: '🔍 Collecte des repls…',
-    downloading: `⬇️ Téléchargement… ${d.current ? '→ ' + d.current : ''}`,
-    done: `✅ Terminé — ${d.done} téléchargés, ${d.failed} erreurs`,
-    error: '❌ Erreur: ' + (d.error || ''),
+    idle:        'En attente',
+    starting:    'Lancement de Chromium…',
+    navigating:  'Navigation vers replit.com/repls…',
+    loading:     'Chargement des repls (scroll)…',
+    collecting:  'Collecte des repls…',
+    downloading: `Téléchargement…${d.current ? ' → ' + d.current : ''}`,
+    done:        `Terminé — ${d.done} téléchargés, ${d.failed} erreurs`,
+    error:       'Erreur: ' + (d.error || ''),
   };
   document.getElementById('prog-label').textContent = statusLabels[d.status] || d.status;
 
-  // Log terminal
-  const box = document.getElementById('log-box');
+  // Incremental log rendering
   if (d.log && d.log.length) {
-    box.innerHTML = d.log.map(l => {
-      const cls = l.startsWith('✓') ? 'ok' : l.startsWith('✗') || l.startsWith('ERREUR') ? 'err' : '';
-      return `<p class="${cls}">${esc(l)}</p>`;
-    }).join('');
-    box.scrollTop = box.scrollHeight;
+    const box = document.getElementById('log-box');
+    const newLines = d.log.slice(logCache.length);
+    for (const l of newLines) {
+      logCache.push(l);
+      const p = document.createElement('p');
+      p.className = l.startsWith('✓') ? 'ok' : l.startsWith('✗') || l.startsWith('ERREUR') ? 'err' : l.startsWith('📸') ? 'info' : l.startsWith('⚠') ? 'warn' : '';
+      p.textContent = l;
+      box.appendChild(p);
+    }
+    if (newLines.length) box.scrollTop = box.scrollHeight;
   }
 
-  // Update button state
+  // Sync debug toggle state
+  document.getElementById('debug-toggle').checked = !!d.debugMode;
+  document.getElementById('t-debug').style.display = d.debugMode ? '' : 'none';
+
+  // Button state
   const btn = document.getElementById('launch-btn');
-  const sp  = document.getElementById('launch-sp');
-  const txt = document.getElementById('launch-txt');
   if (!d.running) {
     btn.disabled = false;
-    sp.style.display = 'none';
-    txt.textContent = d.status === 'done' ? '🔄 Relancer' : '🚀 Lancer le téléchargement';
+    document.getElementById('launch-sp').style.display = 'none';
+    document.getElementById('launch-txt').textContent = d.status === 'done' ? '🔄 Relancer' : '🚀 Lancer le téléchargement';
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     if (d.status === 'done') loadFiles();
   } else {
     btn.disabled = true;
-    sp.style.display = 'inline-block';
-    txt.textContent = 'En cours…';
+    document.getElementById('launch-sp').style.display = 'inline-block';
+    document.getElementById('launch-txt').textContent = 'En cours…';
   }
 
-  // Cache repls for table
-  if (d.repls && d.repls.length) {
-    allReplsCache = d.repls;
-  }
+  if (d.repls && d.repls.length) allReplsCache = d.repls;
 }
 
 // ── Files ─────────────────────────────────────────────────────────
@@ -318,39 +481,72 @@ async function loadFiles() {
     allReplsCache = d.repls;
     renderFiles(allReplsCache);
   } else {
-    document.getElementById('files-wrap').innerHTML = '<div class="empty">Aucun fichier — lance d\'abord le téléchargement.</div>';
+    document.getElementById('files-wrap').innerHTML =
+      '<div class="empty">Aucun fichier<br>Lance le téléchargement d\'abord.</div>';
   }
 }
 
 function renderFiles(repls) {
-  const done = repls.filter(r => r.status === 'done');
   const wrap = document.getElementById('files-wrap');
   if (!repls.length) { wrap.innerHTML = '<div class="empty">Aucun fichier encore.</div>'; return; }
-
+  const done = repls.filter(r => r.status === 'done').length;
   wrap.innerHTML = `
-    <div style="font-size:12px;color:var(--text2);margin-bottom:12px">${done.length} / ${repls.length} ZIP prêts</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+      <span><strong style="color:var(--text)">${done}</strong> / ${repls.length} ZIP prêts</span>
+      ${done > 0 ? `<a class="btn btn-ghost btn-sm" href="/downloads" target="_blank">📁 Dossier</a>` : ''}
+    </div>
     <table>
-      <thead><tr><th>Repl</th><th>Owner</th><th>Statut</th><th>Action</th></tr></thead>
+      <thead><tr><th>Repl</th><th>Owner</th><th>Taille</th><th>Statut</th><th>Action</th></tr></thead>
       <tbody>
         ${repls.map(r => `<tr>
-          <td style="font-weight:600">${esc(r.title||r.slug)}</td>
+          <td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.title||r.slug)}</td>
           <td style="color:var(--text2);font-size:12px">@${esc(r.owner||'')}</td>
+          <td style="font-size:12px;color:var(--text2)">${r.size ? fmtBytes(r.size) : '—'}</td>
           <td>
-            ${r.status==='done'   ? `<span class="pill ok">✓ ${fmtBytes(r.size)}</span>` : ''}
-            ${r.status==='error'  ? `<span class="pill err" title="${esc(r.error||'')}">✗ Erreur</span>` : ''}
-            ${r.status==='pending'? `<span class="pill">En attente</span>` : ''}
-            ${r.status==='downloading'? `<span class="pill spin">⬇ En cours…</span>` : ''}
+            ${r.status==='done'        ? `<span class="pill ok">✓ OK</span>` : ''}
+            ${r.status==='error'       ? `<span class="pill err" title="${esc(r.error||'')}">✗ Erreur</span>` : ''}
+            ${r.status==='pending'     ? `<span class="pill pend">En attente</span>` : ''}
+            ${r.status==='downloading' ? `<span class="pill spin">⬇ En cours…</span>` : ''}
           </td>
           <td>
             ${r.status==='done' && r.file
               ? `<a class="btn btn-primary btn-sm" href="/downloads/${esc(r.file)}" download>⬇ ZIP</a>`
-              : r.status==='error' ? `<span style="font-size:11px;color:var(--danger)">${esc((r.error||'').slice(0,40))}</span>` : '—'
+              : r.status==='error'
+              ? `<span style="font-size:10px;color:var(--danger)" title="${esc(r.error||'')}">${esc((r.error||'').slice(0,35))}…</span>`
+              : '—'
             }
           </td>
         </tr>`).join('')}
       </tbody>
     </table>`;
 }
+
+// ── Screenshots ───────────────────────────────────────────────────
+async function loadScreenshots() {
+  const d = await fetch('/api/progress').then(r=>r.json()).catch(()=>null);
+  const wrap = document.getElementById('screenshots-wrap');
+  if (!d?.screenshots?.length) {
+    wrap.innerHTML = '<div class="empty">Aucun screenshot.<br>Active le mode debug et relance le téléchargement.</div>';
+    return;
+  }
+  wrap.innerHTML = `<div class="screenshots-grid">
+    ${d.screenshots.map(s => `
+      <div class="screenshot-card" onclick="openLightbox('/screenshots/${esc(s.file)}')">
+        <img src="/screenshots/${esc(s.file)}" alt="${esc(s.name)}" loading="lazy">
+        <div class="sc-label">${esc(s.name)}</div>
+      </div>`).join('')}
+  </div>`;
+}
+
+function openLightbox(src) {
+  document.getElementById('lightbox-img').src = src;
+  document.getElementById('lightbox').classList.add('open');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+  document.getElementById('lightbox-img').src = '';
+}
+document.addEventListener('keydown', e => { if (e.key==='Escape') closeLightbox(); });
 
 // ── Utils ─────────────────────────────────────────────────────────
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }

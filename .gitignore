@@ -1,0 +1,12 @@
+node_modules/
+downloads/
+screenshots/
+repls.db
+*.log
+.env
+.replit
+.cache/
+.config/
+.upm/
+.local/
+.agents/
