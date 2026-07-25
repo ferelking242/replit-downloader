@@ -6,26 +6,17 @@ const CHROMIUM_PATH = '/nix/store/43y6k6fj85l4kcd1yan43hpdld6nmjmp-ungoogled-chr
 const DOWNLOADS_DIR = path.join(__dirname, 'downloads');
 const SCREENSHOTS_DIR = path.join(__dirname, 'screenshots');
 
-// ── Download state ─────────────────────────────────────────────────
+// ── State ──────────────────────────────────────────────────────────
 const state = {
-  running: false,
-  status: 'idle',
+  running: false, status: 'idle',
   total: 0, done: 0, failed: 0,
-  current: '',
-  repls: [],
-  log: [],
-  debugMode: false,
-  screenshots: [],
-  error: null,
+  current: '', repls: [], log: [],
+  debugMode: false, screenshots: [], error: null,
 };
 
-// ── Login state ────────────────────────────────────────────────────
 const loginState = {
-  running: false,
-  status: 'idle',
-  step: '',
-  screenshots: [],
-  error: null,
+  running: false, status: 'idle',
+  step: '', screenshots: [], error: null,
 };
 
 function log(msg) {
@@ -34,9 +25,7 @@ function log(msg) {
   if (state.log.length > 300) state.log.shift();
 }
 
-function ensureDir(dir) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
+function ensureDir(d) { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); }
 
 async function takeShot(page, name, stateObj) {
   try {
@@ -50,345 +39,60 @@ async function takeShot(page, name, stateObj) {
   } catch { return null; }
 }
 
+// ── Cookie normalisation ────────────────────────────────────────────
+// This is the critical fix: Playwright requires specific formats.
 function normalizeSameSite(v) {
   if (!v) return 'Lax';
-  const val = String(v).toLowerCase();
-  if (val === 'strict') return 'Strict';
-  if (val === 'none' || val === 'no_restriction') return 'None';
+  const s = String(v).toLowerCase().replace(/_/g, '');
+  if (s === 'strict') return 'Strict';
+  if (s === 'none' || s === 'norestriction') return 'None';
   return 'Lax';
 }
 
-function normalizeCookies(cookies) {
-  return cookies
-    .filter(c => c.name && c.value)
-    .map(c => ({
-      name: c.name, value: c.value,
-      domain: c.domain || '.replit.com',
-      path: c.path || '/',
-      secure: c.secure || false,
-      httpOnly: c.httpOnly || false,
-      sameSite: normalizeSameSite(c.sameSite),
-      expires: c.expirationDate ? Math.floor(c.expirationDate) : undefined,
-    }));
-}
+function buildPlaywrightCookies(rawCookies) {
+  const out = [];
+  for (const c of rawCookies) {
+    if (!c.name || c.value == null) continue;
 
-// ─────────────────────────────────────────────────────────────────
-// LIST REPLS — tries GraphQL API first, falls back to page scrape
-// ─────────────────────────────────────────────────────────────────
-async function listReplsViaGraphQL(context) {
-  log('GraphQL: récupération de la liste des repls…');
+    const sameSite = normalizeSameSite(c.sameSite);
 
-  // Step 1: get current username
-  const meQuery = `query { currentUser { username id } }`;
-  const meResp = await context.request.post('https://replit.com/graphql', {
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Requested-With': 'XMLHttpRequest',
-      'Origin': 'https://replit.com',
-      'Referer': 'https://replit.com/',
-    },
-    data: JSON.stringify({ query: meQuery }),
-    timeout: 20000,
-  });
+    // SameSite=None MUST be Secure — browsers/Playwright both enforce this
+    const secure = sameSite === 'None' ? true : (c.secure === true);
 
-  if (!meResp.ok()) {
-    throw new Error(`GraphQL auth check failed: HTTP ${meResp.status()}`);
+    // domain: Playwright wants leading dot for domain cookies (.replit.com)
+    // Cookie-Editor may export "replit.com" without dot — fix it
+    let domain = c.domain || '.replit.com';
+    if (!domain.startsWith('.') && domain.includes('.')) {
+      domain = '.' + domain;
+    }
+
+    const cookie = {
+      name:     c.name,
+      value:    String(c.value),
+      domain,
+      path:     c.path || '/',
+      secure,
+      httpOnly: c.httpOnly === true,
+      sameSite,
+    };
+
+    // expires: session cookie = -1, otherwise Unix seconds (integer)
+    if (c.expirationDate) {
+      cookie.expires = Math.floor(Number(c.expirationDate));
+    } else if (c.expires && c.expires !== -1 && c.expires !== 'Session') {
+      cookie.expires = Math.floor(Number(c.expires));
+    }
+    // if no expiry provided → leave undefined (Playwright treats as session)
+
+    out.push(cookie);
   }
-
-  const meBody = await meResp.json();
-  if (!meBody?.data?.currentUser?.username) {
-    throw new Error('Non connecté — cookies expirés ou invalides. Reconnecte-toi dans l\'onglet Connexion.');
-  }
-
-  const username = meBody.data.currentUser.username;
-  log(`Connecté en tant que @${username}`);
-
-  // Step 2: paginate through all repls
-  const allRepls = [];
-  let cursor = null;
-  let page = 0;
-
-  const replsQuery = `
-    query userRepls($username: String!, $after: String) {
-      userByUsername(username: $username) {
-        publicRepls(count: 50, after: $after) {
-          items {
-            id
-            title
-            slug
-            owner { username }
-            isPrivate
-          }
-          pageInfo { hasNextPage nextCursor }
-        }
-      }
-    }
-  `;
-
-  // Also try to get private repls via currentUser
-  const privateQuery = `
-    query {
-      currentUser {
-        repls(count: 50, after: null) {
-          items {
-            id title slug isPrivate
-            owner { username }
-          }
-          pageInfo { hasNextPage nextCursor }
-        }
-      }
-    }
-  `;
-
-  // Fetch public repls
-  do {
-    page++;
-    log(`GraphQL page ${page} (cursor: ${cursor || 'début'})…`);
-    const resp = await context.request.post('https://replit.com/graphql', {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Origin': 'https://replit.com',
-        'Referer': 'https://replit.com/',
-      },
-      data: JSON.stringify({
-        query: replsQuery,
-        variables: { username, after: cursor },
-      }),
-      timeout: 20000,
-    });
-
-    if (!resp.ok()) break;
-    const body = await resp.json();
-    const data = body?.data?.userByUsername?.publicRepls;
-    if (!data) break;
-
-    for (const r of data.items || []) {
-      if (!allRepls.find(x => x.slug === r.slug)) {
-        allRepls.push({ slug: r.slug, title: r.title || r.slug, owner: r.owner?.username || username });
-      }
-    }
-
-    if (data.pageInfo?.hasNextPage) {
-      cursor = data.pageInfo.nextCursor;
-    } else {
-      cursor = null;
-    }
-  } while (cursor && page < 50);
-
-  // Also try currentUser repls (includes private)
-  try {
-    let pCursor = null;
-    let pPage = 0;
-    const pQuery = `query currentRepls($after: String) {
-      currentUser {
-        repls(count: 50, after: $after) {
-          items { id title slug isPrivate owner { username } }
-          pageInfo { hasNextPage nextCursor }
-        }
-      }
-    }`;
-    do {
-      pPage++;
-      const pr = await context.request.post('https://replit.com/graphql', {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-          'Origin': 'https://replit.com',
-          'Referer': 'https://replit.com/',
-        },
-        data: JSON.stringify({ query: pQuery, variables: { after: pCursor } }),
-        timeout: 20000,
-      });
-      if (!pr.ok()) break;
-      const pb = await pr.json();
-      const pd = pb?.data?.currentUser?.repls;
-      if (!pd) break;
-      for (const r of pd.items || []) {
-        if (!allRepls.find(x => x.slug === r.slug)) {
-          allRepls.push({ slug: r.slug, title: r.title || r.slug, owner: r.owner?.username || username });
-        }
-      }
-      pCursor = pd.pageInfo?.hasNextPage ? pd.pageInfo.nextCursor : null;
-    } while (pCursor && pPage < 50);
-  } catch (e) {
-    log('(Info: repls privés inaccessibles via currentUser)');
-  }
-
-  log(`GraphQL: ${allRepls.length} repls trouvés pour @${username}`);
-  return allRepls;
-}
-
-// ─────────────────────────────────────────────────────────────────
-// FALLBACK: scrape /repls page
-// ─────────────────────────────────────────────────────────────────
-async function listReplsViaPage(page) {
-  log('Fallback: navigation vers replit.com…');
-
-  // Try multiple dashboard URLs
-  const candidates = [
-    'https://replit.com/repls',
-    'https://replit.com/dashboard',
-    'https://replit.com/~',
-  ];
-
-  let url = '';
-  for (const candidate of candidates) {
-    try {
-      log(`Essai: ${candidate}`);
-      await page.goto(candidate, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.waitForTimeout(3000);
-      url = page.url();
-      log('URL: ' + url);
-      if (!url.includes('/login') && !url.includes('/signin')) break;
-    } catch (e) {
-      log(`Timeout sur ${candidate}: ${e.message}`);
-    }
-  }
-
-  if (url.includes('/login') || url.includes('/signin')) {
-    throw new Error('Redirigé vers login — cookies expirés. Reconnecte-toi dans l\'onglet Connexion.');
-  }
-
-  await autoScroll(page);
-
-  let replData = await page.evaluate(() => {
-    const results = []; const seen = new Set();
-    for (const a of document.querySelectorAll('a[href*="/@"]')) {
-      const href = a.getAttribute('href') || '';
-      const m = href.match(/\/@([\w-]+)\/([\w-]+)(?:$|[?#/])/);
-      if (!m) continue;
-      const key = m[1] + '/' + m[2];
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const title = a.querySelector('[class*="title"],[class*="name"],[class*="heading"]')?.textContent?.trim()
-        || a.textContent?.trim().slice(0, 80) || m[2];
-      results.push({ owner: m[1], slug: m[2], title });
-    }
-    return results;
-  });
-
-  if (replData.length === 0) {
-    log('Fallback HTML scan…');
-    const html = await page.content();
-    const seen2 = new Set();
-    for (const m of html.matchAll(/"slug":"([\w-]+)"[^}]{0,300}"username":"([\w-]+)"/g)) {
-      const key = m[2] + '/' + m[1];
-      if (!seen2.has(key)) { seen2.add(key); replData.push({ slug: m[1], title: m[1], owner: m[2] }); }
-    }
-  }
-
-  return replData;
-}
-
-// ─────────────────────────────────────────────────────────────────
-// LOGIN via Playwright
-// ─────────────────────────────────────────────────────────────────
-async function loginWithPassword(email, password) {
-  if (loginState.running) return;
-  loginState.running = true;
-  loginState.status = 'navigating';
-  loginState.step = 'Lancement de Chromium…';
-  loginState.screenshots = [];
-  loginState.error = null;
-
-  let browser;
-  try {
-    browser = await chromium.launch({
-      executablePath: CHROMIUM_PATH,
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-    });
-
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      viewport: { width: 1280, height: 900 },
-    });
-
-    const page = await context.newPage();
-
-    loginState.step = 'Navigation vers replit.com/login…';
-    await page.goto('https://replit.com/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(2000);
-    await takeShot(page, 'login-page', loginState);
-
-    loginState.step = 'Saisie de l\'email…';
-    const emailSel = 'input[name="username"], input[type="email"], input[placeholder*="email" i], input[placeholder*="username" i]';
-    await page.waitForSelector(emailSel, { timeout: 15000 });
-    await page.fill(emailSel, email);
-    await page.waitForTimeout(400);
-
-    loginState.step = 'Saisie du mot de passe…';
-    const passSel = 'input[type="password"]';
-    await page.waitForSelector(passSel, { timeout: 10000 });
-    await page.fill(passSel, password);
-    await takeShot(page, 'filled-form', loginState);
-    await page.waitForTimeout(300);
-
-    loginState.step = 'Soumission du formulaire…';
-    const submitSel = 'button[type="submit"], button:has-text("Log in"), button:has-text("Sign in"), button:has-text("Continue")';
-    await page.click(submitSel);
-
-    loginState.step = 'Attente de la réponse…';
-    await takeShot(page, 'after-submit', loginState);
-
-    let success = false;
-    for (let i = 0; i < 30; i++) {
-      await page.waitForTimeout(1000);
-      const url = page.url();
-      await takeShot(page, `poll-${i + 1}`, loginState);
-
-      if (!url.includes('/login') && !url.includes('/signin')) {
-        success = true;
-        break;
-      }
-
-      const hasCaptcha = await page.evaluate(() =>
-        !!(document.querySelector('iframe[src*="hcaptcha"]') ||
-          document.querySelector('.h-captcha') ||
-          document.querySelector('[data-hcaptcha-widget-id]') ||
-          document.querySelector('iframe[src*="recaptcha"]'))
-      ).catch(() => false);
-
-      if (hasCaptcha) {
-        loginState.status = 'waiting_captcha';
-        loginState.step = 'Captcha détecté — utilise la méthode Cookies si bloqué.';
-      }
-
-      const hasError = await page.evaluate(() => {
-        const t = document.body?.innerText || '';
-        return t.includes('Invalid') || t.includes('incorrect') || t.includes('wrong') || t.includes('Incorrect');
-      }).catch(() => false);
-      if (hasError) throw new Error('Email ou mot de passe incorrect.');
-    }
-
-    if (!success) {
-      throw new Error('Timeout: impossible de se connecter. Captcha non résolu ou identifiants incorrects.');
-    }
-
-    loginState.step = 'Connexion réussie — extraction des cookies…';
-    loginState.status = 'success';
-    const cookies = await context.cookies();
-    await takeShot(page, 'success', loginState);
-    return { success: true, cookies };
-
-  } catch (e) {
-    loginState.status = 'error';
-    loginState.error = e.message;
-    return { success: false, error: e.message };
-  } finally {
-    if (browser) await browser.close().catch(() => {});
-    loginState.running = false;
-    if (loginState.status !== 'success' && loginState.status !== 'error') {
-      loginState.status = 'idle';
-    }
-  }
+  return out;
 }
 
 // ─────────────────────────────────────────────────────────────────
 // DOWNLOAD repls
 // ─────────────────────────────────────────────────────────────────
-async function run(cookies) {
+async function run(rawCookies) {
   if (state.running) return;
   state.running = true;
   state.status = 'starting';
@@ -404,7 +108,11 @@ async function run(cookies) {
     browser = await chromium.launch({
       executablePath: CHROMIUM_PATH,
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+      args: [
+        '--no-sandbox', '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage', '--disable-gpu',
+        '--disable-blink-features=AutomationControlled',
+      ],
     });
 
     const context = await browser.newContext({
@@ -412,42 +120,117 @@ async function run(cookies) {
       acceptDownloads: true,
       downloadsPath: DOWNLOADS_DIR,
       viewport: { width: 1280, height: 900 },
+      locale: 'fr-FR',
     });
 
-    log(`Injection de ${cookies.length} cookies…`);
-    await context.addCookies(normalizeCookies(cookies));
+    // ── Inject cookies ─────────────────────────────────────────
+    const playwrightCookies = buildPlaywrightCookies(rawCookies);
+    log(`Injection de ${playwrightCookies.length} cookies (${rawCookies.length} bruts)…`);
 
-    // Step 1: List repls via GraphQL (fast, reliable)
-    state.status = 'collecting';
-    let replData = [];
-
-    try {
-      replData = await listReplsViaGraphQL(context);
-    } catch (gqlErr) {
-      log(`GraphQL échoué: ${gqlErr.message}`);
-      // If it's an auth error, throw immediately
-      if (gqlErr.message.includes('expirés') || gqlErr.message.includes('connecté')) {
-        throw gqlErr;
+    // Log a few key cookies for debug
+    const keyCookies = ['connect.sid', '__Host-session-sig', 'replit_authed'];
+    for (const kc of keyCookies) {
+      const found = playwrightCookies.find(c => c.name === kc);
+      if (found) {
+        log(`  ✓ ${kc} → domain=${found.domain} secure=${found.secure} sameSite=${found.sameSite}`);
+      } else {
+        log(`  ✗ ${kc} manquant`);
       }
-      // Otherwise fallback to page scrape
-      log('Fallback vers scraping de page…');
-      state.status = 'navigating';
-      const page = await context.newPage();
-      page.setDefaultTimeout(30000);
-      replData = await listReplsViaPage(page);
-      if (state.debugMode) await takeShot(page, '01-page-fallback', state);
+    }
+
+    await context.addCookies(playwrightCookies);
+
+    const page = await context.newPage();
+    page.setDefaultTimeout(60000);
+
+    // ── Navigate to /repls ─────────────────────────────────────
+    state.status = 'navigating';
+    log('Navigation vers https://replit.com/repls…');
+
+    await page.goto('https://replit.com/repls', {
+      waitUntil: 'load',
+      timeout: 60000,
+    });
+
+    // Extra wait for SPA to settle
+    await page.waitForTimeout(3000);
+
+    const url = page.url();
+    log('URL finale: ' + url);
+
+    if (state.debugMode) await takeShot(page, '01-repls-page', state);
+
+    if (url.includes('/login') || url.includes('/signin')) {
+      if (state.debugMode) await takeShot(page, 'login-redirect', state);
+
+      // Diagnose: check what cookies the browser actually has
+      const browserCookies = await context.cookies('https://replit.com');
+      log(`Cookies dans le navigateur: ${browserCookies.length}`);
+      const hasSession = browserCookies.some(c => c.name === 'connect.sid');
+      log(`connect.sid présent dans nav: ${hasSession}`);
+
+      throw new Error(
+        'Redirigé vers login — les cookies ne sont pas acceptés par Replit. ' +
+        'Ré-exporte tes cookies depuis replit.com (Cookie-Editor → Export as JSON) et colle-les à nouveau.'
+      );
+    }
+
+    // ── Scroll to load all repls ───────────────────────────────
+    state.status = 'loading';
+    log('Scroll pour charger tous les repls…');
+    await autoScroll(page);
+    if (state.debugMode) await takeShot(page, '02-after-scroll', state);
+
+    // ── Collect repls ──────────────────────────────────────────
+    state.status = 'collecting';
+    log('Collecte des repls…');
+
+    let replData = await page.evaluate(() => {
+      const results = []; const seen = new Set();
+      // Method 1: links
+      for (const a of document.querySelectorAll('a[href*="/@"]')) {
+        const href = a.getAttribute('href') || '';
+        const m = href.match(/\/@([\w-]+)\/([\w-]+)(?:$|[?#/])/);
+        if (!m) continue;
+        const key = m[1] + '/' + m[2];
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const title =
+          a.querySelector('[class*="title"],[class*="name"],[class*="heading"]')?.textContent?.trim() ||
+          a.textContent?.trim().slice(0, 80) || m[2];
+        results.push({ owner: m[1], slug: m[2], title });
+      }
+      return results;
+    });
+
+    // Method 2: JSON in page source
+    if (replData.length === 0) {
+      log('Fallback: scan JSON dans le HTML…');
+      const html = await page.content();
+      const seen = new Set();
+      // Pattern: slug + username in JSON
+      for (const m of html.matchAll(/"slug"\s*:\s*"([\w-]+)"[^}]{0,400}"username"\s*:\s*"([\w-]+)"/g)) {
+        const key = m[2] + '/' + m[1];
+        if (!seen.has(key)) { seen.add(key); replData.push({ slug: m[1], title: m[1], owner: m[2] }); }
+      }
+      // Reverse pattern
+      for (const m of html.matchAll(/"username"\s*:\s*"([\w-]+)"[^}]{0,400}"slug"\s*:\s*"([\w-]+)"/g)) {
+        const key = m[1] + '/' + m[2];
+        if (!seen.has(key)) { seen.add(key); replData.push({ slug: m[2], title: m[2], owner: m[1] }); }
+      }
     }
 
     log(`Trouvé ${replData.length} repls`);
+    if (state.debugMode) await takeShot(page, '03-collected', state);
 
     if (replData.length === 0) {
-      throw new Error('Aucun repl trouvé. Vérifie tes cookies ou ton compte.');
+      throw new Error('Aucun repl trouvé sur la page. Vérifie que ton compte n\'est pas vide.');
     }
 
     state.total = replData.length;
     state.repls = replData.map(r => ({ ...r, status: 'pending', file: null, error: null }));
 
-    // Step 2: Download each repl
+    // ── Download each repl ─────────────────────────────────────
     state.status = 'downloading';
     log('Démarrage des téléchargements…');
 
@@ -466,7 +249,7 @@ async function run(cookies) {
           timeout: 120000,
           headers: {
             'Accept': 'application/zip,application/octet-stream,*/*',
-            'Referer': 'https://replit.com/',
+            'Referer': 'https://replit.com/repls',
           },
         });
 
@@ -475,7 +258,7 @@ async function run(cookies) {
         const ct = response.headers()['content-type'] || '';
         if (ct.includes('text/html')) {
           const snippet = (await response.text()).slice(0, 120);
-          throw new Error(`Réponse HTML (auth expirée?): ${snippet}`);
+          throw new Error(`Réponse HTML (session expirée?): ${snippet}`);
         }
 
         const body = await response.body();
@@ -487,11 +270,12 @@ async function run(cookies) {
         state.done++;
         log(`✓ ${repl.title} (${fmtBytes(size)})`);
 
-        await new Promise(r => setTimeout(r, 400));
+        await page.waitForTimeout(400);
       } catch (e) {
         repl.status = 'error'; repl.error = e.message;
         state.failed++;
         log(`✗ ${repl.title}: ${e.message}`);
+        if (state.debugMode) await takeShot(page, `err-${repl.slug}`, state);
       }
     }
 
@@ -507,8 +291,8 @@ async function run(cookies) {
   }
 }
 
-// ── Retry a single failed repl ─────────────────────────────────────
-async function retryRepl(slug, cookies) {
+// ── Retry ──────────────────────────────────────────────────────────
+async function retryRepl(slug, rawCookies) {
   const repl = state.repls.find(r => r.slug === slug);
   if (!repl || repl.status === 'done') return;
   repl.status = 'downloading'; repl.error = null;
@@ -522,16 +306,13 @@ async function retryRepl(slug, cookies) {
     const context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     });
-    await context.addCookies(normalizeCookies(cookies));
+    await context.addCookies(buildPlaywrightCookies(rawCookies));
 
     const zipUrl = `https://replit.com/@${repl.owner}/${repl.slug}.zip`;
     const filename = `${repl.owner}-${repl.slug}.zip`;
     const filepath = path.join(DOWNLOADS_DIR, filename);
 
-    const response = await context.request.get(zipUrl, {
-      timeout: 120000,
-      headers: { 'Accept': 'application/zip,application/octet-stream,*/*' },
-    });
+    const response = await context.request.get(zipUrl, { timeout: 120000 });
     if (!response.ok()) throw new Error(`HTTP ${response.status()}`);
     const body = await response.body();
     if (body.length < 22) throw new Error(`Archive trop petite (${body.length}B)`);
@@ -541,12 +322,97 @@ async function retryRepl(slug, cookies) {
     repl.status = 'done'; repl.file = filename; repl.size = size;
     state.done = Math.min(state.done + 1, state.total);
     state.failed = Math.max(state.failed - 1, 0);
-    log(`✓ Retry réussi: ${repl.title} (${fmtBytes(size)})`);
+    log(`✓ Retry: ${repl.title} (${fmtBytes(size)})`);
   } catch (e) {
     repl.status = 'error'; repl.error = e.message;
     log(`✗ Retry échoué: ${repl.title}: ${e.message}`);
   } finally {
     if (browser) await browser.close().catch(() => {});
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// LOGIN via Playwright
+// ─────────────────────────────────────────────────────────────────
+async function loginWithPassword(email, password) {
+  if (loginState.running) return;
+  loginState.running = true;
+  loginState.status = 'navigating';
+  loginState.step = 'Lancement de Chromium…';
+  loginState.screenshots = [];
+  loginState.error = null;
+
+  let browser;
+  try {
+    browser = await chromium.launch({
+      executablePath: CHROMIUM_PATH, headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    });
+
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      viewport: { width: 1280, height: 900 },
+    });
+
+    const page = await context.newPage();
+
+    loginState.step = 'Navigation vers replit.com/login…';
+    await page.goto('https://replit.com/login', { waitUntil: 'load', timeout: 30000 });
+    await page.waitForTimeout(2000);
+    await takeShot(page, 'login-page', loginState);
+
+    loginState.step = 'Saisie de l\'email…';
+    const emailSel = 'input[name="username"], input[type="email"], input[placeholder*="email" i], input[placeholder*="username" i]';
+    await page.waitForSelector(emailSel, { timeout: 15000 });
+    await page.fill(emailSel, email);
+    await page.waitForTimeout(400);
+
+    loginState.step = 'Saisie du mot de passe…';
+    await page.waitForSelector('input[type="password"]', { timeout: 10000 });
+    await page.fill('input[type="password"]', password);
+    await takeShot(page, 'filled-form', loginState);
+    await page.waitForTimeout(300);
+
+    loginState.step = 'Soumission…';
+    await page.click('button[type="submit"], button:has-text("Log in"), button:has-text("Sign in"), button:has-text("Continue")');
+    await takeShot(page, 'after-submit', loginState);
+
+    let success = false;
+    for (let i = 0; i < 30; i++) {
+      await page.waitForTimeout(1000);
+      const url = page.url();
+      await takeShot(page, `poll-${i + 1}`, loginState);
+      if (!url.includes('/login') && !url.includes('/signin')) { success = true; break; }
+
+      const hasCaptcha = await page.evaluate(() =>
+        !!(document.querySelector('iframe[src*="hcaptcha"]') ||
+           document.querySelector('.h-captcha') ||
+           document.querySelector('iframe[src*="recaptcha"]'))
+      ).catch(() => false);
+      if (hasCaptcha) { loginState.status = 'waiting_captcha'; loginState.step = 'Captcha détecté — utilise la méthode Cookies.'; }
+
+      const hasError = await page.evaluate(() => {
+        const t = document.body?.innerText || '';
+        return t.includes('Invalid') || t.includes('incorrect') || t.includes('Incorrect');
+      }).catch(() => false);
+      if (hasError) throw new Error('Email ou mot de passe incorrect.');
+    }
+
+    if (!success) throw new Error('Timeout: impossible de se connecter.');
+
+    loginState.step = 'Extraction des cookies…';
+    loginState.status = 'success';
+    const cookies = await context.cookies();
+    await takeShot(page, 'success', loginState);
+    return { success: true, cookies };
+
+  } catch (e) {
+    loginState.status = 'error'; loginState.error = e.message;
+    return { success: false, error: e.message };
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+    loginState.running = false;
+    if (loginState.status !== 'success' && loginState.status !== 'error') loginState.status = 'idle';
   }
 }
 
