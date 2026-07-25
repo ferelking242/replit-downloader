@@ -433,6 +433,31 @@ textarea { resize: vertical; min-height: 100px; font-family: 'Courier New', mono
 #lb.open { display: flex; }
 #lb img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
 
+/* ── Drop zone ───────────────────────────────────────────────────── */
+.drop-zone { position: relative; }
+.drop-zone textarea { display: block; }
+.drop-hint {
+  position: absolute; bottom: 8px; right: 10px;
+  font-size: 11px; color: var(--text3);
+  pointer-events: none;
+  transition: opacity .2s;
+}
+.drop-zone.drag-over textarea { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(244,114,22,.15); }
+.drop-zone.drag-over .drop-hint { color: var(--accent); }
+
+.ck-preview-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px 14px;
+  font-size: 12px;
+  display: flex; align-items: center; gap: 10px;
+}
+.ck-preview-box .ck-count { font-weight: 800; color: var(--accent); font-size: 16px; }
+.ck-preview-box .ck-keys { color: var(--text2); font-family: monospace; font-size: 11px; line-height: 1.6; flex: 1; }
+.ck-preview-ok  { border-color: rgba(34,197,94,.3); }
+.ck-preview-err { border-color: rgba(239,68,68,.3); }
+
 /* ── Scrollbar ───────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -538,16 +563,37 @@ textarea { resize: vertical; min-height: 100px; font-family: 'Courier New', mono
               <li><div class="step-n">1</div><div class="step-text">Va sur <strong>replit.com</strong> et connecte-toi</div></li>
               <li><div class="step-n">2</div><div class="step-text">Installe l'extension <strong>Cookie-Editor</strong></div></li>
               <li><div class="step-n">3</div><div class="step-text">Clique → <strong>Export</strong> → <strong>Export as JSON</strong></div></li>
-              <li><div class="step-n">4</div><div class="step-text">Colle le JSON complet ci-dessous</div></li>
+              <li><div class="step-n">4</div><div class="step-text">Colle le JSON ici — bouton ou Ctrl+V dans la zone</div></li>
             </ul>
           </div>
+
           <div class="field">
-            <label class="fl">JSON des cookies</label>
-            <textarea id="cookie-input" rows="5" placeholder='[{"name":"connect.sid","value":"..."},...]'></textarea>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <label class="fl" style="margin:0">JSON des cookies</label>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-ghost btn-sm" id="paste-btn" onclick="pasteFromClipboard()" title="Coller depuis le presse-papiers">
+                  📋 Coller
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="clearCookieInput()" title="Effacer">✕</button>
+              </div>
+            </div>
+            <div id="drop-zone" class="drop-zone">
+              <textarea id="cookie-input" rows="6"
+                placeholder='Colle ton JSON ici  [{"name":"connect.sid","value":"s%3A..."},...]'
+                oninput="onCookieInput()"
+                onpaste="onCookiePaste(event)"
+                ondragover="event.preventDefault();this.closest('.drop-zone').classList.add('drag-over')"
+                ondragleave="this.closest('.drop-zone').classList.remove('drag-over')"
+                ondrop="onCookieDrop(event)"
+              ></textarea>
+              <div class="drop-hint">📂 Glisse un fichier .json ici</div>
+            </div>
+            <div id="ck-preview" style="margin-top:8px;display:none"></div>
           </div>
-          <button class="btn btn-primary" id="ck-btn" onclick="saveCookies()">
+
+          <button class="btn btn-primary" id="ck-btn" onclick="saveCookies()" style="width:100%;justify-content:center;padding:12px">
             <span id="ck-sp" class="spinner" style="display:none"></span>
-            Sauvegarder les cookies
+            <span id="ck-txt">Sauvegarder les cookies</span>
           </button>
           <div id="ck-msg" style="margin-top:12px"></div>
         </div>
@@ -789,26 +835,136 @@ async function pollLoginStatus() {
   }
 }
 
+// ── Cookie helpers ────────────────────────────────────────────────
+function parseCookieInput(raw) {
+  if (!raw) return null;
+  raw = raw.trim();
+
+  // Already valid JSON array
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+    // Maybe it's a single object? wrap it
+    if (parsed && typeof parsed === 'object') return [parsed];
+  } catch (_) {}
+
+  // Try to extract JSON array from inside a larger string (e.g. pasted with extra text)
+  const arrMatch = raw.match(/(\[[\s\S]*\])/);
+  if (arrMatch) {
+    try {
+      const parsed = JSON.parse(arrMatch[1]);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (_) {}
+  }
+
+  // Netscape / curl format: "name=value; name2=value2"
+  if (raw.includes('=') && !raw.startsWith('[')) {
+    const cookies = [];
+    const parts = raw.split(/;\s*/);
+    for (const part of parts) {
+      const eq = part.indexOf('=');
+      if (eq === -1) continue;
+      const name = part.slice(0, eq).trim();
+      const value = part.slice(eq + 1).trim();
+      if (name) cookies.push({ name, value, domain: '.replit.com', path: '/' });
+    }
+    if (cookies.length) return cookies;
+  }
+
+  return null;
+}
+
+function previewCookies(cookies) {
+  const box = document.getElementById('ck-preview');
+  if (!cookies || !cookies.length) { box.style.display = 'none'; return; }
+
+  const keyNames = ['connect.sid', '__Host-session-sig', 'replit_authed'];
+  const found = keyNames.filter(k => cookies.some(c => c.name === k));
+  const missing = keyNames.filter(k => !cookies.some(c => c.name === k));
+  const ok = found.length >= 2;
+
+  box.style.display = '';
+  box.innerHTML = `<div class="ck-preview-box ${ok ? 'ck-preview-ok' : 'ck-preview-err'}">
+    <div class="ck-count">${cookies.length}</div>
+    <div class="ck-keys">
+      ${found.map(k => `<span style="color:var(--green)">✓ ${k}</span>`).join('<br>')}
+      ${missing.map(k => `<span style="color:var(--red)">✗ ${k} manquant</span>`).join('<br>')}
+    </div>
+    <div style="font-size:11px;color:var(--text2)">${ok ? '✅ Valide' : '⚠ Incomplet'}</div>
+  </div>`;
+}
+
+function onCookieInput() {
+  const raw = document.getElementById('cookie-input').value;
+  const cookies = parseCookieInput(raw);
+  previewCookies(cookies);
+}
+
+function onCookiePaste(event) {
+  // Let native paste happen first, then parse
+  setTimeout(() => {
+    const raw = document.getElementById('cookie-input').value;
+    // Auto-clean: remove surrounding whitespace/quotes that sometimes appear
+    const cleaned = raw.trim().replace(/^["']|["']$/g, '').trim();
+    if (cleaned !== raw) document.getElementById('cookie-input').value = cleaned;
+    onCookieInput();
+  }, 50);
+}
+
+function onCookieDrop(event) {
+  event.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag-over');
+  const file = event.dataTransfer.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('cookie-input').value = e.target.result;
+    onCookieInput();
+  };
+  reader.readAsText(file);
+}
+
+async function pasteFromClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    document.getElementById('cookie-input').value = text;
+    onCookieInput();
+    showToast('📋 Collé depuis le presse-papiers');
+  } catch (e) {
+    // Fallback: focus the textarea so the user can Ctrl+V
+    document.getElementById('cookie-input').focus();
+    showToast('⚠ Clique dans la zone puis Ctrl+V');
+  }
+}
+
+function clearCookieInput() {
+  document.getElementById('cookie-input').value = '';
+  document.getElementById('ck-preview').style.display = 'none';
+  document.getElementById('ck-msg').innerHTML = '';
+}
+
 // ── Login: paste cookies ──────────────────────────────────────────
 async function saveCookies() {
   const raw = document.getElementById('cookie-input').value.trim();
   const sp  = document.getElementById('ck-sp');
   const btn = document.getElementById('ck-btn');
+  const txt = document.getElementById('ck-txt');
   const msg = document.getElementById('ck-msg');
 
   if (!raw) { showAlert(msg, 'err', 'Colle tes cookies d\'abord.'); return; }
 
-  let cookies;
-  try { cookies = JSON.parse(raw); }
-  catch (e) { showAlert(msg, 'err', 'JSON invalide: ' + e.message); return; }
+  const cookies = parseCookieInput(raw);
+  if (!cookies) { showAlert(msg, 'err', 'Format non reconnu — colle le JSON exporté par Cookie-Editor.'); return; }
+  if (!cookies.length) { showAlert(msg, 'err', 'Tableau vide — aucun cookie trouvé.'); return; }
 
-  sp.style.display = 'inline-block'; btn.disabled = true;
+  sp.style.display = 'inline-block'; btn.disabled = true; txt.textContent = 'Envoi…';
+
   const r = await fetch('/api/cookies', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cookies })
   }).then(r => r.json()).catch(e => ({ success: false, error: e.message }));
 
-  sp.style.display = 'none'; btn.disabled = false;
+  sp.style.display = 'none'; btn.disabled = false; txt.textContent = 'Sauvegarder les cookies';
 
   if (r.success) {
     showAlert(msg, 'ok', '✓ ' + r.message + (r.username ? ' — @' + r.username : ''));

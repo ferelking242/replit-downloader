@@ -55,34 +55,40 @@ function buildPlaywrightCookies(rawCookies) {
     if (!c.name || c.value == null) continue;
 
     const sameSite = normalizeSameSite(c.sameSite);
+    const name     = c.name;
 
-    // SameSite=None MUST be Secure — browsers/Playwright both enforce this
-    const secure = sameSite === 'None' ? true : (c.secure === true);
-
-    // domain: Playwright wants leading dot for domain cookies (.replit.com)
-    // Cookie-Editor may export "replit.com" without dot — fix it
-    let domain = c.domain || '.replit.com';
-    if (!domain.startsWith('.') && domain.includes('.')) {
-      domain = '.' + domain;
-    }
+    // __Host- cookies: MUST be Secure, path=/, and NO domain (host-only)
+    // __Secure- cookies: MUST be Secure
+    // SameSite=None: MUST be Secure
+    const isHostPrefix   = name.startsWith('__Host-');
+    const isSecurePrefix = name.startsWith('__Secure-');
+    const secure = isHostPrefix || isSecurePrefix || sameSite === 'None' || c.secure === true;
 
     const cookie = {
-      name:     c.name,
+      name,
       value:    String(c.value),
-      domain,
-      path:     c.path || '/',
+      path:     isHostPrefix ? '/' : (c.path || '/'),
       secure,
       httpOnly: c.httpOnly === true,
       sameSite,
     };
 
-    // expires: session cookie = -1, otherwise Unix seconds (integer)
-    if (c.expirationDate) {
-      cookie.expires = Math.floor(Number(c.expirationDate));
-    } else if (c.expires && c.expires !== -1 && c.expires !== 'Session') {
-      cookie.expires = Math.floor(Number(c.expires));
+    // __Host- cookies must NOT have a domain field — Playwright/Chrome will reject them
+    if (!isHostPrefix) {
+      let domain = c.domain || '.replit.com';
+      // Ensure leading dot for domain cookies
+      if (domain && !domain.startsWith('.') && domain.includes('.')) {
+        domain = '.' + domain;
+      }
+      cookie.domain = domain;
     }
-    // if no expiry provided → leave undefined (Playwright treats as session)
+
+    // expires: use expirationDate (Cookie-Editor) or expires field
+    const expRaw = c.expirationDate ?? c.expires;
+    if (expRaw && expRaw !== -1 && expRaw !== 'Session') {
+      const expNum = Math.floor(Number(expRaw));
+      if (!isNaN(expNum) && expNum > 0) cookie.expires = expNum;
+    }
 
     out.push(cookie);
   }
