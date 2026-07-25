@@ -967,9 +967,16 @@ async function saveCookies() {
   sp.style.display = 'none'; btn.disabled = false; txt.textContent = 'Sauvegarder les cookies';
 
   if (r.success) {
-    showAlert(msg, 'ok', '✓ ' + r.message + (r.username ? ' — @' + r.username : ''));
+    if (r.warning) {
+      showAlert(msg, 'warn', r.warning);
+    } else {
+      showAlert(msg, 'ok', '✓ ' + r.message + (r.username ? ' — @' + r.username : ''));
+      await checkAuth();
+      setTimeout(() => nav('download'), 1200);
+    }
+    if (!r.warning) return;
+    // Still update auth chip even with warning
     await checkAuth();
-    setTimeout(() => nav('download'), 1200);
   } else {
     showAlert(msg, 'err', '✗ ' + r.error);
   }

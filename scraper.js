@@ -67,20 +67,23 @@ function buildPlaywrightCookies(rawCookies) {
     const cookie = {
       name,
       value:    String(c.value),
-      path:     isHostPrefix ? '/' : (c.path || '/'),
       secure,
       httpOnly: c.httpOnly === true,
       sameSite,
     };
 
-    // __Host- cookies must NOT have a domain field — Playwright/Chrome will reject them
-    if (!isHostPrefix) {
+    // __Host- cookies: Playwright requires `url` only (no domain, no path)
+    if (isHostPrefix) {
+      cookie.url = 'https://replit.com';
+    } else {
+      // All other cookies: set domain + path (no url)
       let domain = c.domain || '.replit.com';
       // Ensure leading dot for domain cookies
       if (domain && !domain.startsWith('.') && domain.includes('.')) {
         domain = '.' + domain;
       }
       cookie.domain = domain;
+      cookie.path   = c.path || '/';
     }
 
     // expires: use expirationDate (Cookie-Editor) or expires field
@@ -96,9 +99,69 @@ function buildPlaywrightCookies(rawCookies) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// REPL EXTRACTION HELPERS
+// ─────────────────────────────────────────────────────────────────
+async function extractReplsFromPage(page) {
+  const results = []; const seen = new Set();
+  const data = await page.evaluate(() => {
+    const out = [];
+    for (const a of document.querySelectorAll('a[href*="/@"]')) {
+      const href = a.getAttribute('href') || '';
+      const m = href.match(/\/@([\w-]+)\/([\w-]+)(?:$|[?#/])/);
+      if (!m) continue;
+      const title =
+        a.querySelector('[class*="title"],[class*="name"],[class*="heading"]')?.textContent?.trim() ||
+        a.textContent?.trim().slice(0, 80) || m[2];
+      out.push({ owner: m[1], slug: m[2], title });
+    }
+    return out;
+  }).catch(() => []);
+  for (const r of data) {
+    const key = r.owner + '/' + r.slug;
+    if (!seen.has(key)) { seen.add(key); results.push(r); }
+  }
+  return results;
+}
+
+async function getReplsViaProfilePage(context, username) {
+  if (!username) return [];
+  try {
+    const resp = await context.request.get(`https://replit.com/@${username}`, {
+      timeout: 30000,
+      headers: { 'Accept': 'text/html,*/*', 'Referer': 'https://replit.com/' },
+    });
+    if (!resp.ok()) return [];
+    const html = await resp.text();
+    return extractReplsFromHtml(html, username);
+  } catch { return []; }
+}
+
+function extractReplsFromHtml(html, ownerHint) {
+  const seen = new Set();
+  const results = [];
+  // JSON blobs: "slug":"...", "username":"..."
+  for (const m of html.matchAll(/"slug"\s*:\s*"([\w-]+)"[^}]{0,400}"username"\s*:\s*"([\w-]+)"/g)) {
+    const key = m[2] + '/' + m[1];
+    if (!seen.has(key)) { seen.add(key); results.push({ slug: m[1], title: m[1], owner: m[2] }); }
+  }
+  for (const m of html.matchAll(/"username"\s*:\s*"([\w-]+)"[^}]{0,400}"slug"\s*:\s*"([\w-]+)"/g)) {
+    const key = m[1] + '/' + m[2];
+    if (!seen.has(key)) { seen.add(key); results.push({ slug: m[2], title: m[2], owner: m[1] }); }
+  }
+  // Anchor links /@owner/slug
+  for (const m of html.matchAll(/href="\/\@([\w-]+)\/([\w-]+)"/g)) {
+    const key = m[1] + '/' + m[2];
+    if (!seen.has(key)) { seen.add(key); results.push({ slug: m[2], title: m[2], owner: m[1] }); }
+  }
+  // If ownerHint provided, filter to only that owner
+  if (ownerHint) return results.filter(r => r.owner === ownerHint);
+  return results;
+}
+
+// ─────────────────────────────────────────────────────────────────
 // DOWNLOAD repls
 // ─────────────────────────────────────────────────────────────────
-async function run(rawCookies) {
+async function run(rawCookies, username) {
   if (state.running) return;
   state.running = true;
   state.status = 'starting';
@@ -166,19 +229,21 @@ async function run(rawCookies) {
 
     if (state.debugMode) await takeShot(page, '01-repls-page', state);
 
+    // ── Handle login redirect — fall back to public profile page ──
     if (url.includes('/login') || url.includes('/signin')) {
       if (state.debugMode) await takeShot(page, 'login-redirect', state);
 
-      // Diagnose: check what cookies the browser actually has
       const browserCookies = await context.cookies('https://replit.com');
       log(`Cookies dans le navigateur: ${browserCookies.length}`);
-      const hasSession = browserCookies.some(c => c.name === 'connect.sid');
-      log(`connect.sid présent dans nav: ${hasSession}`);
+      log('⚠ __Host-session-sig expiré — navigation vers le profil public…');
 
-      throw new Error(
-        'Redirigé vers login — les cookies ne sont pas acceptés par Replit. ' +
-        'Ré-exporte tes cookies depuis replit.com (Cookie-Editor → Export as JSON) et colle-les à nouveau.'
-      );
+      if (!username) throw new Error('Session expirée et username inconnu. Reconnecte-toi.');
+
+      // Navigate to public profile — no short-lived cookie required
+      await page.goto(`https://replit.com/@${username}`, { waitUntil: 'load', timeout: 60000 });
+      await page.waitForTimeout(3000);
+      log('URL profil: ' + page.url());
+      if (state.debugMode) await takeShot(page, '01b-profile-page', state);
     }
 
     // ── Scroll to load all repls ───────────────────────────────
@@ -191,39 +256,19 @@ async function run(rawCookies) {
     state.status = 'collecting';
     log('Collecte des repls…');
 
-    let replData = await page.evaluate(() => {
-      const results = []; const seen = new Set();
-      // Method 1: links
-      for (const a of document.querySelectorAll('a[href*="/@"]')) {
-        const href = a.getAttribute('href') || '';
-        const m = href.match(/\/@([\w-]+)\/([\w-]+)(?:$|[?#/])/);
-        if (!m) continue;
-        const key = m[1] + '/' + m[2];
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const title =
-          a.querySelector('[class*="title"],[class*="name"],[class*="heading"]')?.textContent?.trim() ||
-          a.textContent?.trim().slice(0, 80) || m[2];
-        results.push({ owner: m[1], slug: m[2], title });
-      }
-      return results;
-    });
+    let replData = await extractReplsFromPage(page);
 
-    // Method 2: JSON in page source
+    // Fallback A: profile page via HTTP request (no browser session needed)
     if (replData.length === 0) {
-      log('Fallback: scan JSON dans le HTML…');
+      log('Fallback A: profil public via requête HTTP…');
+      replData = await getReplsViaProfilePage(context, username);
+    }
+
+    // Fallback B: scan raw JSON in current page HTML
+    if (replData.length === 0) {
+      log('Fallback B: scan JSON dans le HTML…');
       const html = await page.content();
-      const seen = new Set();
-      // Pattern: slug + username in JSON
-      for (const m of html.matchAll(/"slug"\s*:\s*"([\w-]+)"[^}]{0,400}"username"\s*:\s*"([\w-]+)"/g)) {
-        const key = m[2] + '/' + m[1];
-        if (!seen.has(key)) { seen.add(key); replData.push({ slug: m[1], title: m[1], owner: m[2] }); }
-      }
-      // Reverse pattern
-      for (const m of html.matchAll(/"username"\s*:\s*"([\w-]+)"[^}]{0,400}"slug"\s*:\s*"([\w-]+)"/g)) {
-        const key = m[1] + '/' + m[2];
-        if (!seen.has(key)) { seen.add(key); replData.push({ slug: m[2], title: m[2], owner: m[1] }); }
-      }
+      replData = extractReplsFromHtml(html);
     }
 
     log(`Trouvé ${replData.length} repls`);

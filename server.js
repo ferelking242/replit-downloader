@@ -68,6 +68,20 @@ app.post('/api/cookies', (req, res) => {
   if (!hasSession)
     return res.json({ success: false, error: 'Cookie connect.sid manquant. Exporte TOUS les cookies de replit.com.' });
 
+  // Warn if __Host-session-sig is already expired (15-min TTL)
+  let sessionWarning = null;
+  const sigCookie = cookies.find(c => c.name === '__Host-session-sig');
+  if (sigCookie) {
+    const sigJwt = decodeJwt(sigCookie.value);
+    if (sigJwt?.exp) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (sigJwt.exp < nowSec) {
+        const agoMin = Math.round((nowSec - sigJwt.exp) / 60);
+        sessionWarning = `⚠️ __Host-session-sig expiré depuis ${agoMin} min. Replit refusera la session. Exporte des cookies FRAIS depuis un onglet replit.com ouvert, puis colle-les immédiatement.`;
+      }
+    }
+  }
+
   const { email, username } = extractIdentity(cookies);
   setSetting('cookies', JSON.stringify(cookies));
   if (username) setSetting('username', username);
@@ -76,7 +90,7 @@ app.post('/api/cookies', (req, res) => {
   scraper.state.repls = [];
   scraper.state.status = 'idle';
 
-  res.json({ success: true, message: `${cookies.length} cookies sauvegardés.`, username });
+  res.json({ success: true, message: `${cookies.length} cookies sauvegardés.`, username, warning: sessionWarning });
 });
 
 // ── Login via email + password (Playwright) ──────────────────────
@@ -123,7 +137,7 @@ app.post('/api/start', (req, res) => {
   const cookies = getStoredCookies();
   if (!cookies) return res.json({ success: false, error: 'Aucun cookie. Connecte-toi d\'abord.' });
   if (scraper.state.running) return res.json({ success: true, message: 'Déjà en cours…' });
-  scraper.run(cookies).catch(console.error);
+  scraper.run(cookies, getSetting('username')).catch(console.error);
   res.json({ success: true });
 });
 
